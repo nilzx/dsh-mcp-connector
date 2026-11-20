@@ -308,6 +308,7 @@ window.__ModuleLoader__.load({
         name,
         originalName: name,
         original: clone(source),
+        tab: 'tools',
         expanded: false,
         more: false,
         advanced: false,
@@ -884,7 +885,7 @@ window.__ModuleLoader__.load({
 
     /** One server card: tools, scope, and configuration behind three sub-tabs. */
     function ServerCard({ server, runtime, update, updateUi, remove, t, editable, act, busy, dupe, workspaces, workspaceSupport }) {
-      const [tab, setTab] = useState('tools')
+      const tab = server.tab ?? 'tools'
       const id = suffix => `mcx-${server.key}-${suffix}`
       const disabled = !editable
       const stdio = server.transport === 'stdio'
@@ -930,7 +931,7 @@ window.__ModuleLoader__.load({
                   role: 'tab',
                   'aria-selected': tab === item.id,
                   className: `mcx-subtab${tab === item.id ? ' mcx-subtab-active' : ''}`,
-                  onClick: () => setTab(item.id),
+                  onClick: () => updateUi({ tab: item.id }),
                 }, item.label))),
               tab === 'tools'
                 ? h(ServerTools, { server, runtime, updateServer: update, t, disabled })
@@ -1048,6 +1049,7 @@ window.__ModuleLoader__.load({
       const [saving, setSaving] = useState(false)
       const [busy, setBusy] = useState(false)
       const [notice, setNotice] = useState(null)
+      const appliedConfigRef = useRef(undefined)
       const dirtyRef = useRef(false)
       const draftRef = useRef(null)
       const savingRef = useRef(false)
@@ -1065,22 +1067,27 @@ window.__ModuleLoader__.load({
           workspaces: state.workspaces ?? [],
           workspaceSupport: state.workspaceSupport === true,
         })
-        if (force || !dirtyRef.current) {
-          const next = draftFromConfig(state.config)
-          const previous = draftRef.current
-          if (previous !== null) {
-            for (const server of next.servers) {
-              const before = previous.servers.find(candidate => candidate.originalName === server.originalName)
-              if (before !== undefined) {
-                server.expanded = before.expanded
-                server.more = before.more
-                server.advanced = before.advanced
-              }
+        // A status refresh carries the same configuration; rebuilding the draft
+        // would remount every card and drop the sub-tab the user is on.
+        const configKey = JSON.stringify(state.config)
+        const configChanged = configKey !== appliedConfigRef.current
+        if (!force && (dirtyRef.current || !configChanged)) return
+        appliedConfigRef.current = configKey
+        const next = draftFromConfig(state.config)
+        const previous = draftRef.current
+        if (previous !== null) {
+          for (const server of next.servers) {
+            const before = previous.servers.find(candidate => candidate.originalName === server.originalName)
+            if (before !== undefined) {
+              server.tab = before.tab
+              server.expanded = before.expanded
+              server.more = before.more
+              server.advanced = before.advanced
             }
           }
-          setDraft(next)
-          setDirty(false)
         }
+        setDraft(next)
+        setDirty(false)
       }, [])
 
       const load = useCallback(async ({ force = false, attempts = 5 } = {}) => {
