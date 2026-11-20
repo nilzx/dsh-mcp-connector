@@ -73,6 +73,12 @@ Open a server's **Scope** sub-tab to choose where its tools apply:
 
 This is useful for project-specific servers: keep a work server out of personal sessions, or connect two accounts of the same service to different projects.
 
+### Temporary agents and server instructions
+
+The **Scope** tab also controls **Temporary agents**. Access defaults to **Allow** for compatibility. Select **Block** for personal-memory servers or any service that should belong only to the primary conversation (`delegation: deny` in configuration). The connector hides the server's tools and instructions from delegated sessions and rejects their calls before dispatch. A workspace restriction is also checked at dispatch time. A forked primary conversation remains eligible; missing session metadata is rejected when delegation is blocked.
+
+MCP `initialize.instructions` are forwarded as a literal, server-labelled system-prompt section, without template interpolation. The section follows workspace/delegation access, is cleared on disconnection, and is absent when all server tools are blocked or hidden. Instructions exceeding 32 KiB including the label fail connection. These instructions guide the model; they do not force tool calls before every answer. Each service must describe its own lifecycle consistently.
+
 ## Connection states
 
 | State | Meaning |

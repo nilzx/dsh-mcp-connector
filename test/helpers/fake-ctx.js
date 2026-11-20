@@ -17,6 +17,7 @@ export function createFakeContext({ services = {} } = {}) {
   /** @type {Map<string, Function[]>} */
   const listeners = new Map()
   const effects = []
+  const sections = new Map()
   const debug = process.env.DSH_MCP_CONNECTOR_DEBUG === '1'
   const log = (...args) => {
     if (debug) console.log('[ctx]', ...args)
@@ -28,6 +29,14 @@ export function createFakeContext({ services = {} } = {}) {
 
   const ctx = {
     logger,
+    inject(_names, callback) { return callback(ctx) },
+    systemPrompt: {
+      getSectionOrder() { return 0 },
+      section(section) {
+        sections.set(section.name, section)
+        return () => sections.delete(section.name)
+      },
+    },
     get: (name) => services[name],
     effect(fn, label) {
       const disposer = typeof fn === 'function' ? fn() : undefined
@@ -60,13 +69,14 @@ export function createFakeContext({ services = {} } = {}) {
    * @param args - model arguments.
    * @returns the canonical value.
    */
-  async function callTool(name, args = {}) {
+  async function callTool(name, args = {}, agent) {
     const definition = tools.get(name)
     if (definition === undefined) throw new Error(`no such tool "${name}"`)
     return definition.execute(args, {
       callId: 'call-1',
       name,
       arguments: args,
+      agent,
       signal: AbortSignal.timeout(10_000),
     })
   }
@@ -77,12 +87,13 @@ export function createFakeContext({ services = {} } = {}) {
    * @param args - model arguments.
    * @returns the resolved decision.
    */
-  async function preExecute(name, args = {}) {
+  async function preExecute(name, args = {}, agent) {
     const list = [...(listeners.get('tools/pre-execute') ?? [])]
     const exec = {
       callId: 'call-1',
       name,
       arguments: args,
+      agent,
       signal: AbortSignal.timeout(10_000),
     }
     let index = 0
@@ -101,7 +112,7 @@ export function createFakeContext({ services = {} } = {}) {
     }
   }
 
-  return { ctx, tools, listeners, effects, callTool, preExecute, dispose }
+  return { ctx, tools, listeners, effects, sections, callTool, preExecute, dispose }
 }
 
 /** Reject values the real credential store cannot persist. */

@@ -29,7 +29,7 @@ export class McpConnectorConfigError extends Error {
 const GLOBAL_KEYS = new Set(['servers', 'failOnStartupError', 'openBrowser'])
 const SERVER_KEYS = new Set([
   'transport', 'enabled', 'command', 'args', 'env', 'cwd', 'url', 'headers', 'auth',
-  'toolCallTimeoutMs', 'startupTimeoutMs', 'closeTimeoutMs', 'reconnect', 'tools', 'scope',
+  'toolCallTimeoutMs', 'startupTimeoutMs', 'closeTimeoutMs', 'reconnect', 'tools', 'scope', 'delegation',
 ])
 const AUTH_KEYS = new Set([
   'type', 'token', 'scopes', 'clientId', 'clientSecret', 'clientName', 'callbackPort',
@@ -284,6 +284,7 @@ function normalizeServer(name, value, globalOpenBrowser) {
       reconnect: normalizeReconnect(undefined, `${where}.reconnect`),
       tools: compileToolPolicy(undefined, `${where}.tools`),
       scope: { mode: 'global' },
+      delegation: 'allow',
       openBrowser: false,
     }
   }
@@ -309,6 +310,9 @@ function normalizeServer(name, value, globalOpenBrowser) {
     }
   }
 
+  if (value.delegation !== undefined && !['allow', 'deny'].includes(value.delegation)) {
+    throw new McpConnectorConfigError(`${where}.delegation must be allow or deny`)
+  }
   const auth = normalizeAuth(value.auth, transport, `${where}.auth`)
   const common = {
     name,
@@ -327,6 +331,7 @@ function normalizeServer(name, value, globalOpenBrowser) {
     reconnect: normalizeReconnect(value.reconnect, `${where}.reconnect`),
     tools: compileToolPolicy(value.tools, `${where}.tools`),
     scope: normalizeScope(value.scope, `${where}.scope`),
+    delegation: value.delegation ?? 'allow',
     openBrowser: auth.type === 'oauth'
       ? (auth.openBrowser ?? globalOpenBrowser)
       : false,

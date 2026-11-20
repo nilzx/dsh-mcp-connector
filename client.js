@@ -91,6 +91,10 @@ window.__ModuleLoader__.load({
       resource: 'Resource',
       resourceHint: 'Optional OAuth resource indicator.',
       oauthBrowser: 'Open the sign-in page automatically',
+      delegation: 'Temporary agents',
+      delegationAllow: 'Allow access',
+      delegationDeny: 'Block access',
+      delegationHint: 'Block temporary agents from using this server, for example a personal memory server.',
       scope: 'Where it applies',
       scopeGlobal: 'Everywhere (global)',
       scopeWorkspaces: 'Only in selected workspaces',
@@ -209,6 +213,10 @@ window.__ModuleLoader__.load({
       resource: '资源标识',
       resourceHint: '可选，OAuth 的 resource 参数。',
       oauthBrowser: '自动打开登录页面',
+      delegation: '临时子代理',
+      delegationAllow: '允许访问',
+      delegationDeny: '禁止访问',
+      delegationHint: '禁止临时子代理使用此服务，例如个人记忆服务。',
       scope: '作用范围',
       scopeGlobal: '全局（所有会话）',
       scopeWorkspaces: '仅在指定工作区',
@@ -330,6 +338,7 @@ window.__ModuleLoader__.load({
         oauthBrowser: auth.openBrowser !== false,
         toolsDefault: POLICIES.includes(tools.default) ? tools.default : 'allow',
         rules: Object.entries(rules).map(([pattern, policy]) => ({ key: uid(), pattern, policy })),
+        delegation: source.delegation === 'deny' ? 'deny' : 'allow',
         scopeMode: scope.mode === 'workspaces' ? 'workspaces' : 'global',
         scopePaths: Array.isArray(scope.paths) ? [...scope.paths] : [],
         toolCallTimeout: source.toolCallTimeoutMs === undefined ? '' : String(source.toolCallTimeoutMs),
@@ -352,6 +361,8 @@ window.__ModuleLoader__.load({
       const value = clone(draft.original)
       value.enabled = draft.enabled
       value.transport = draft.transport
+      if (draft.delegation === 'deny') value.delegation = 'deny'
+      else delete value.delegation
       for (const key of ['command', 'args', 'env', 'cwd', 'url', 'headers', 'auth', 'scope']) delete value[key]
 
       if (draft.transport === 'stdio') {
@@ -599,6 +610,11 @@ window.__ModuleLoader__.load({
         update({ scopePaths: next })
       }
       return h('div', { className: 'mcx-field' },
+        h(Field, { id: `delegation-${server.key}`, label: t('delegation'), hint: t('delegationHint') },
+          h(Select, { id: `delegation-${server.key}`, value: server.delegation, disabled,
+            options: [{ value: 'allow', label: t('delegationAllow') }, { value: 'deny', label: t('delegationDeny') }],
+            onChange: value => update({ delegation: value }),
+          })),
         h(Field, { id: `scope-${server.key}`, label: t('scope'), hint: t('scopeHint') },
           h(Select, {
             id: `scope-${server.key}`,

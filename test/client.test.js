@@ -10,7 +10,7 @@ const clientPath = fileURLToPath(new URL('../client.js', import.meta.url))
  * @returns the module definition registered under the package id.
  */
 async function loadClientModule() {
-  const source = await readFile(clientPath, 'utf8')
+  const source = (await readFile(clientPath, 'utf8')).replace("    return {\n      inject: ['slots', 'locale'],", "    return { __test: { serverDraft, serverConfig, ScopeFields },\n      inject: ['slots', 'locale'],")
   let loaded
   const window = {
     __ModuleLoader__: {
@@ -73,6 +73,20 @@ describe('client module', () => {
     assert.equal(options.id, 'mcp-connector')
     assert.equal(typeof options.label(), 'string')
     assert.equal(typeof component, 'function')
+  })
+
+  it('round-trips delegation and renders its control', async () => {
+    const { factory } = await loadClientModule()
+    const { serverDraft, serverConfig, ScopeFields } = factory.__test
+    const denied = serverDraft('x', { command: 'node', transport: 'stdio', delegation: 'deny' })
+    assert.equal(denied.delegation, 'deny')
+    assert.equal(serverConfig(denied).delegation, 'deny')
+    denied.delegation = 'allow'
+    assert.equal(serverConfig(denied).delegation, undefined)
+    const source = await readFile(clientPath, 'utf8')
+    assert.match(source, /value: server\.delegation/)
+    assert.match(source, /onChange: value => update\(\{ delegation: value \}\)/)
+    assert.equal(typeof ScopeFields, 'function')
   })
 
   it('ships a dictionary with identical keys in both languages', async () => {

@@ -64,15 +64,15 @@ function jsonContent(value) {
 
 /**
  * Build the management tool definitions bound to one connector.
- * @param options - `{ connections, find }`.
+ * @param options - `{ connections, allows }`.
  * @returns the tool definitions.
  */
-function managementTools({ connections, find }) {
+function managementTools({ connections, allows }) {
   return [
     {
       name: 'mcp_connector_status',
       description:
-        'Report every configured MCP server: transport, connection state, discovered tools with their per-tool authorization policy, '
+        'Report each MCP server available to this agent: transport, connection state, discovered tools with their per-tool authorization policy, '
         + 'pending authorization URL, and the last error. Use it before calling MCP tools or when a server looks disconnected.',
       parameters: { type: 'object', properties: {}, additionalProperties: false },
       output: {
@@ -84,8 +84,8 @@ function managementTools({ connections, find }) {
         },
         render: (_args, value) => jsonContent(value),
       },
-      async execute() {
-        return compactJson({ servers: connections.map(connection => connection.snapshot()) })
+      async execute(_args, exec) {
+        return compactJson({ servers: connections.filter(connection => allows(connection, exec?.agent)).map(connection => connection.snapshot()) })
       },
     },
     {
@@ -109,8 +109,9 @@ function managementTools({ connections, find }) {
         schema: { type: 'object', properties: {}, additionalProperties: true },
         render: (_args, value) => jsonContent(value),
       },
-      async execute(args) {
-        const connection = find(args?.server)
+      async execute(args, exec) {
+        const connection = connections.find(candidate => candidate.entry.name === args?.server && allows(candidate, exec?.agent))
+        if (connection === undefined) throw new Error('No accessible MCP server with that name')
         const waitSeconds = typeof args?.waitSeconds === 'number' ? Math.max(0, Math.min(120, args.waitSeconds)) : 0
         return connection.authorize({ waitMs: waitSeconds * 1000 })
       },
@@ -129,8 +130,9 @@ function managementTools({ connections, find }) {
         schema: { type: 'object', properties: {}, additionalProperties: true },
         render: (_args, value) => jsonContent(value),
       },
-      async execute(args) {
-        const connection = find(args?.server)
+      async execute(args, exec) {
+        const connection = connections.find(candidate => candidate.entry.name === args?.server && allows(candidate, exec?.agent))
+        if (connection === undefined) throw new Error('No accessible MCP server with that name')
         return connection.logout()
       },
     },
@@ -148,8 +150,9 @@ function managementTools({ connections, find }) {
         schema: { type: 'object', properties: {}, additionalProperties: true },
         render: (_args, value) => jsonContent(value),
       },
-      async execute(args) {
-        const connection = find(args?.server)
+      async execute(args, exec) {
+        const connection = connections.find(candidate => candidate.entry.name === args?.server && allows(candidate, exec?.agent))
+        if (connection === undefined) throw new Error('No accessible MCP server with that name')
         const result = await connection.reconnect()
         return compactJson({ server: connection.entry.name, ...result, toolCount: connection.tools.size })
       },
@@ -236,16 +239,37 @@ export async function apply(ctx, config) {
     return scope.paths.includes(normalized)
   }
 
+  // A delegation policy is generic: no server-specific tool names or prompts.
+  const agentAllows = (connection, agent) => {
+    if (!scopeAllows(connection, sessionDirectory(agent ?? {}))) return false
+    if (connection.entry.delegation !== 'deny') return true
+    const header = agent?.session?.header
+    return header !== undefined && header.origin === undefined
+      && (header.delegationDepth === undefined || header.delegationDepth === 0)
+  }
+
+  ctx.inject(['systemPrompt'], (inner) => {
+    for (const connection of connections) {
+      inner.systemPrompt.section({
+        name: `mcp-connector:${connection.entry.name}`,
+        order: inner.systemPrompt.getSectionOrder('MCP_SERVERS'),
+        interpolate: false,
+        text: ({ agent } = {}) => agentAllows(connection, agent)
+          && [...connection.policies.values()].some(policy => policy === 'allow' || policy === 'ask')
+          ? connection.instructions : '',
+      })
+    }
+  })
+
   /**
    * Recompute one agent's hidden tool set.
    * @param agent - live agent.
    */
   const applyAgentScope = (agent) => {
     if (agent?.ctx === undefined || agent?.session === undefined) return
-    const directory = sessionDirectory(agent)
     const denied = []
     for (const connection of connections) {
-      if (scopeAllows(connection, directory)) continue
+      if (agentAllows(connection, agent)) continue
       denied.push(...connection.toolNames)
     }
     const previous = scopeRestrictions.get(agent.id)
@@ -278,13 +302,17 @@ export async function apply(ctx, config) {
     for (const connection of connections) {
       const policy = connection.policies.get(exec.name)
       if (policy === undefined) continue
+      if (!agentAllows(connection, exec.agent)) {
+        return { kind: 'deny', reason: 'This MCP server is not available to this agent.',
+          info: { name: 'McpConnectorScopeError', code: 'MCP_CONNECTOR_SCOPE_DENIED' } }
+      }
       const decision = policyDecision(policy, exec.name)
       return decision === undefined ? next() : decision
     }
     return next()
   }, { prepend: true }), 'mcp-connector: per-tool policy')
 
-  for (const definition of managementTools({ connections, find })) {
+  for (const definition of managementTools({ connections, allows: agentAllows })) {
     ctx.effect(() => ctx.tools.register(definition), `mcp-connector: ${definition.name}`)
   }
 

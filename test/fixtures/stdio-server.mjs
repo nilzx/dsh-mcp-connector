@@ -10,7 +10,7 @@ import { McpServer } from '@modelcontextprotocol/server'
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 
-const server = new McpServer({ name: 'stdio-fixture', version: '1.0.0' })
+const server = new McpServer({ name: 'stdio-fixture', version: '1.0.0' }, { instructions: process.env.FIXTURE_INSTRUCTIONS ?? '' })
 
 server.registerTool(
   'echo',

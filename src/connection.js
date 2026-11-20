@@ -91,6 +91,7 @@ export class ServerConnection {
     this.policies = new Map()
     /** Notified after the registered tool set changes, so scopes can re-apply. */
     this.onToolsChanged = undefined
+    this.instructions = ''
     this.client = undefined
     this.transport = undefined
     this.flow = undefined
@@ -203,6 +204,7 @@ export class ServerConnection {
       client.onclose = () => {
         if (stale() || this.client !== client) return
         this.logger.warn(`server "${this.entry.name}": connection closed`)
+        this.instructions = ''
         this.client = undefined
         this.transport = undefined
         this.status.state = 'reconnecting'
@@ -226,13 +228,19 @@ export class ServerConnection {
       }
       this.client = client
       this.transport = transport
+      const rawInstructions = client.getInstructions?.()?.trimEnd() ?? ''
+      const instructions = rawInstructions ? `### MCP server: ${this.entry.name}\n\n${rawInstructions}` : ''
+      if (Buffer.byteLength(instructions, 'utf8') > 32768) {
+        throw new Error('MCP server instructions exceed the 32768-byte limit')
+      }
       await this.#sync(client)
-      if (stale()) {
+      if (stale() || this.client !== client) {
         this.#unregisterTools()
         await bounded(client.close(), this.entry.closeTimeoutMs)
         return
       }
       this.attempt = 0
+      this.instructions = instructions
       this.status.state = 'connected'
       this.status.toolCount = this.tools.size
       this.status.connectedAt = Date.now()
@@ -247,6 +255,7 @@ export class ServerConnection {
     } catch (error) {
       const connected = this.client
       const transport = this.transport
+      this.instructions = ''
       this.client = undefined
       this.transport = undefined
       if (connected !== undefined) await bounded(connected.close(), this.entry.closeTimeoutMs)
@@ -419,6 +428,7 @@ export class ServerConnection {
     this.#clearTimer()
     const client = this.client
     const transport = this.transport
+    this.instructions = ''
     this.client = undefined
     this.transport = undefined
     if (client !== undefined) await bounded(client.close(), this.entry.closeTimeoutMs)
@@ -490,6 +500,7 @@ export class ServerConnection {
     this.generation += 1
     const client = this.client
     const transport = this.transport
+    this.instructions = ''
     this.client = undefined
     this.transport = undefined
     if (client !== undefined) await bounded(client.close(), this.entry.closeTimeoutMs)
@@ -531,6 +542,7 @@ export class ServerConnection {
     this.#unregisterTools()
     const client = this.client
     const transport = this.transport
+    this.instructions = ''
     this.client = undefined
     this.transport = undefined
     if (client !== undefined) await bounded(client.close(), this.entry.closeTimeoutMs)
