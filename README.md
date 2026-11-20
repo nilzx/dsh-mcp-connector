@@ -79,6 +79,49 @@ The **Scope** tab also controls **Temporary agents**. Access defaults to **Allow
 
 MCP `initialize.instructions` are forwarded as a literal, server-labelled system-prompt section, without template interpolation. The section follows workspace/delegation access, is cleared on disconnection, and is absent when all server tools are blocked or hidden. Instructions exceeding 32 KiB including the label fail connection. These instructions guide the model; they do not force tool calls before every answer. Each service must describe its own lifecycle consistently.
 
+## Automatic turn context (unreleased)
+
+For services that must refresh context after a conversation first loads them,
+configure `turnContext` in the server's profile configuration. This is generic
+connector functionality: the connector does not recognize service names or parse
+state from prose. It requires dsh's `storageDomain` and scoped tool executor
+(validated with dsh 0.2.2-rc.5).
+
+```yaml
+turnContext:
+  tool: load_context
+  arguments: {}
+  state:
+    session: /session
+  pins:
+    - /owner/id
+  maxBytes: 131072
+```
+
+`state` maps next-call argument names to JSON pointers in MCP `structuredContent`.
+`pins` identifies immutable scalar values; changed pins reject the result before
+delivery. Use bounded scalar values, and keep secrets out of these fields. The
+text context is limited to `maxBytes` (default 128 KiB, maximum 1 MiB).
+
+Start a new, unseeded conversation with the feature enabled. It stays neutral
+until a successful call to the configured tool. Later turns and mid-turn user
+messages refresh before model generation; intermediate tool steps do not. The
+automatic call uses the conversation's normal scoped executor and permission
+pipeline. The context tool must have policy **Allow**; automatic refresh never
+changes a tool's policy. Timeout, cancellation, invalid output, changed endpoint
+or pins, scope denial, and storage errors block the step instead of allowing a
+response based on stale context. Other executor modes that refuse native calls
+also block; they are not silently bypassed.
+
+The `mcp_connector_context` durable domain stores per-session endpoint
+fingerprints, mapped arguments and pins, not response text. Successful refresh
+text is recorded in the conversation as connector-authored context. Missing
+state for old/seeded/forked conversations is rejected. Keep this sidecar with the
+profile; fork, restore, migration and deletion integration are not automatic.
+Turning off or uninstalling the plugin removes enforcement. This facility does
+not establish a server-authenticated identity binding or guarantee that a
+service's bounded context contains every change.
+
 ## Connection states
 
 | State | Meaning |

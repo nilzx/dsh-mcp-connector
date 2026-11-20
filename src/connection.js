@@ -388,13 +388,14 @@ export class ServerConnection {
             if (connected === undefined) {
               throw new Error(`MCP server "${this.entry.name}" is not connected; retrying in the background`)
             }
-            return connected.callTool(
-              { name: tool.name, arguments: args },
+            const invoke = arguments_ => connected.callTool(
+              { name: tool.name, arguments: arguments_ },
               {
                 timeout: this.entry.toolCallTimeoutMs,
                 signal: AbortSignal.any([exec.signal, this.lifecycle.signal]),
               },
             )
+            return this.contextCall === undefined ? invoke(args) : this.contextCall(tool.name, args, exec, invoke)
           },
         })
         const dispose = this.ctx.tools.register(definition)
@@ -525,6 +526,9 @@ export class ServerConnection {
       authorizationUrl: this.status.authorizationUrl,
       nextRetryAt: this.status.nextRetryAt,
       serverVersion: this.status.serverVersion,
+      ...(this.entry.turnContext === undefined ? {} : { turnContext: {
+        mode: 'after-first-call', tool: this.entry.turnContext.tool, failure: 'block-step',
+      } }),
       tools: [...this.tools.entries()].map(([name, record]) => ({
         name,
         remoteName: record.rawName,

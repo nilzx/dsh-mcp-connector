@@ -84,8 +84,7 @@ function renderText(value, rawName) {
  * @returns the unregistered tool definition.
  */
 export function createToolDefinition({ publicName, rawName, description, inputSchema, outputSchema, call, redact }) {
-  const properties = { content: { type: 'array', items: {} } }
-  if (outputSchema !== undefined) properties.structuredContent = {}
+  const properties = { content: { type: 'array', items: {} }, structuredContent: {} }
   return {
     name: publicName,
     description: typeof description === 'string' && description !== '' ? description : `MCP tool "${rawName}"`,

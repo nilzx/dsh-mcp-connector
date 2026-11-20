@@ -29,7 +29,7 @@ export class McpConnectorConfigError extends Error {
 const GLOBAL_KEYS = new Set(['servers', 'failOnStartupError', 'openBrowser'])
 const SERVER_KEYS = new Set([
   'transport', 'enabled', 'command', 'args', 'env', 'cwd', 'url', 'headers', 'auth',
-  'toolCallTimeoutMs', 'startupTimeoutMs', 'closeTimeoutMs', 'reconnect', 'tools', 'scope', 'delegation',
+  'toolCallTimeoutMs', 'startupTimeoutMs', 'closeTimeoutMs', 'reconnect', 'tools', 'scope', 'delegation', 'turnContext',
 ])
 const AUTH_KEYS = new Set([
   'type', 'token', 'scopes', 'clientId', 'clientSecret', 'clientName', 'callbackPort',
@@ -38,6 +38,37 @@ const AUTH_KEYS = new Set([
 const RECONNECT_KEYS = new Set(['enabled', 'initialDelayMs', 'maxDelayMs', 'maxAttempts'])
 const SCOPE_KEYS = new Set(['mode', 'paths'])
 const TRANSPORTS = new Set(['stdio', 'streamable-http', 'sse'])
+
+/** Validate the opt-in generic context tool and structured state mappings. */
+function normalizeTurnContext(value, where) {
+  if (value === undefined) return undefined
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new McpConnectorConfigError(`${where} must be an object`)
+  onlyKeys(value, new Set(['tool', 'arguments', 'state', 'pins', 'maxBytes']), where)
+  const pointer = (v, path) => {
+    requireString(v, path)
+    if (!v.startsWith('/') || v.length > 512 || /~(?![01])/.test(v)
+      || v.split('/').some(p => ['__proto__', 'prototype', 'constructor'].includes(p))) {
+      throw new McpConnectorConfigError(`${path} must be a safe non-root JSON pointer`)
+    }
+    return v
+  }
+  const state = value.state ?? {}
+  if (typeof state !== 'object' || state === null || Array.isArray(state) || Object.keys(state).length > 16) throw new McpConnectorConfigError(`${where}.state must map at most 16 argument names to JSON pointers`)
+  for (const [key, path] of Object.entries(state)) {
+    if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key) || ['constructor', 'prototype'].includes(key)) throw new McpConnectorConfigError(`${where}.state has an invalid argument name`)
+    pointer(path, `${where}.state.${key}`)
+  }
+  const pins = value.pins ?? []
+  if (!Array.isArray(pins) || pins.length > 16) throw new McpConnectorConfigError(`${where}.pins must contain at most 16 JSON pointers`)
+  pins.forEach((p, i) => pointer(p, `${where}.pins[${i}]`))
+  const args = value.arguments ?? {}
+  if (typeof args !== 'object' || args === null || Array.isArray(args)
+    || Object.keys(args).some(k => ['__proto__', 'constructor', 'prototype'].includes(k) || Object.hasOwn(state, k))
+    || Object.values(args).some(v => !(v === null || typeof v === 'boolean' || (typeof v === 'string' && v.length <= 4096) || (typeof v === 'number' && Number.isFinite(v))))
+    || Object.keys(args).length > 32) throw new McpConnectorConfigError(`${where}.arguments must contain bounded scalar values and cannot override managed state`)
+  return { tool: requireString(value.tool, `${where}.tool`), arguments: { ...args }, state: { ...state }, pins: [...pins],
+    maxBytes: value.maxBytes === undefined ? 131072 : requireNumber(value.maxBytes, `${where}.maxBytes`, { min: 1, max: 1048576, integer: true }) }
+}
 
 /**
  * Reject keys the schema does not define.
@@ -332,6 +363,7 @@ function normalizeServer(name, value, globalOpenBrowser) {
     tools: compileToolPolicy(value.tools, `${where}.tools`),
     scope: normalizeScope(value.scope, `${where}.scope`),
     delegation: value.delegation ?? 'allow',
+    ...(value.turnContext === undefined ? {} : { turnContext: normalizeTurnContext(value.turnContext, `${where}.turnContext`) }),
     openBrowser: auth.type === 'oauth'
       ? (auth.openBrowser ?? globalOpenBrowser)
       : false,

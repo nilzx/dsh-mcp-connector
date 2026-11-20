@@ -43,7 +43,7 @@ describe('stdio MCP server', () => {
 
   it('registers every discovered tool under the server-qualified name', () => {
     const names = [...harness.tools.keys()].filter(name => name.startsWith('mcp__fix__')).sort()
-    assert.deepEqual(names, ['mcp__fix__ask_me', 'mcp__fix__boom', 'mcp__fix__crash', 'mcp__fix__echo', 'mcp__fix__secret_delete'])
+    assert.deepEqual(names, ['mcp__fix__ask_me', 'mcp__fix__boom', 'mcp__fix__context_fixture', 'mcp__fix__crash', 'mcp__fix__echo', 'mcp__fix__secret_delete'])
   })
 
   it('does not register a tool whose policy is off', () => {
@@ -107,6 +107,7 @@ describe('stdio MCP server', () => {
     assert.equal(server.serverVersion, 'stdio-fixture 1.0.0')
     const policies = Object.fromEntries(server.tools.map(tool => [tool.remoteName, tool.policy]))
     assert.deepEqual(policies, {
+      context_fixture: 'allow',
       echo: 'allow',
       secret_delete: 'deny',
       ask_me: 'ask',

@@ -12,6 +12,8 @@ import { z } from 'zod'
 
 const server = new McpServer({ name: 'stdio-fixture', version: '1.0.0' }, { instructions: process.env.FIXTURE_INSTRUCTIONS ?? '' })
 
+server.registerTool('context_fixture', { description: 'Structured context', inputSchema: z.object({ session: z.string().optional() }), outputSchema: z.object({ session: z.string(), identity: z.string() }) }, async ({ session }) => ({ content: [{ type: 'text', text: 'fixture context' }], structuredContent: { session: session ?? 'fixture-session', identity: 'fixture-identity' } }))
+
 server.registerTool(
   'echo',
   { description: 'Echo the given text', inputSchema: z.object({ text: z.string() }) },
