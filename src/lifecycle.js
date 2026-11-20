@@ -14,7 +14,7 @@ const sessionRecord = z.object({ sessionId: z.string(), createdAt: z.number().in
 export const lifecycleDomain = { name: 'mcp_connector_lifecycle', version: 1, tables: { sessions: { valueSchema: sessionRecord } } }
 const fail = message => { throw new Error(`MCP initialization: ${message}`) }
 const fingerprint = c => {
-  const { blockedTools: _policy, ...workflow } = c.entry.lifecycle
+  const { blockedTools: _policy, requireCreationAdmission: _admissionPolicy, ...workflow } = c.entry.lifecycle
   return hash([c.entry.name, c.entry.transport, c.entry.url, c.entry.command, c.entry.args, c.entry.cwd,
     c.entry.runtimeMetadata, c.entry.turnContext, workflow])
 }
@@ -22,6 +22,8 @@ const fingerprint = c => {
 export async function installLifecycle(ctx, connections, allows, logger, inScope = allows) {
   const enabled = connections.filter(c => c.entry.lifecycle !== undefined)
   if (!enabled.length) return
+  const creationAdmission = ctx.get('sessions')?.preparationAdmissionVersion === 1
+  if (!creationAdmission && enabled.some(c => c.entry.lifecycle.requireCreationAdmission)) fail('this workflow requires host session preparation admission version 1; no silent downgrade is allowed')
   if (typeof ctx.tools?.guard !== 'function' || !ctx.get('llm')) fail('monotonic tool guards and model stream middleware are required')
   const facility = ctx.get('storageDomain')
   if (!facility?.open) fail('durable storageDomain service is required')
@@ -155,6 +157,35 @@ export async function installLifecycle(ctx, connections, allows, logger, inScope
     fail('temporary helpers must start with fresh context; inherited transcripts are not admitted')
   }
   ctx.effect(() => ctx.on('agent/created', ({ agent }) => checkTemporary(agent)), 'mcp-connector: fresh helper admission')
+
+  // Host-owned synchronous metadata arrives before a destination Session is
+  // constructed or returned to a persistence owner. No transcript is inspected.
+  if (creationAdmission) ctx.effect(() => ctx.on('session/preparing', request => {
+    if (disposed) fail('connector is stopping')
+    const h = request.header, agent = { session: { header: h } }
+    const current = table.get(hash(h.id))
+    if (current && (current.sessionId !== h.id || current.createdAt !== h.createdAt)) fail('persistent conversation identity changed before construction')
+    const parent = typeof h.parentSession === 'string' ? table.get(hash(h.parentSession)) : undefined
+    const owned = Object.keys(current?.groups ?? {}).length > 0
+    const parentOwned = Object.keys(parent?.groups ?? {}).length > 0
+    const scoped = enabled.some(c => c.entry.enabled !== false && inScope(c, agent))
+    const temporary = h.origin !== undefined || (h.delegationDepth ?? 0) !== 0
+    const inherited = h.isSeeded === true || request.inheritedEventCount > 0 || (!request.restoration && request.seedEventCount > 0)
+    if (temporary) {
+      if (owned) fail('a persistent workflow cannot be restored as a temporary helper')
+      if ((inherited || request.seedEventCount > 0) && (owned || parentOwned || scoped)) fail('temporary helpers must start with fresh context; inherited transcripts are refused before construction')
+      return
+    }
+    if (owned) entries(agent)
+    if (!inherited || owned || (!parentOwned && !scoped)) return
+    if (h.parentSession === h.id || !parentOwned || parent.sessionId !== h.parentSession) fail('seeded conversation has no trusted workflow parent before construction')
+    for (const [group, entry] of Object.entries(parent.groups)) {
+      const c = enabled.find(c => c.entry.name === entry.server)
+      if (!c || c.entry.enabled === false || !allows(c, agent) || c.entry.lifecycle.group !== group || entry.fingerprint !== fingerprint(c)) fail('parent workflow configuration changed before construction')
+    }
+    // Source creation time and remote ownership are still checked by inherit()
+    // before any model request. The host supplies the actual fork parent id.
+  }), 'mcp-connector: pre-construction workflow admission')
 
   for (const c of enabled) {
     c.recoveryLifecycle = {

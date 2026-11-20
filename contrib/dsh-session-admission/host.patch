@@ -1,0 +1,127 @@
+--- a/packages/core/session/src/index.ts
++++ b/packages/core/session/src/index.ts
+@@ -54,6 +54,14 @@
+      * @mode emit
+      */
+     'session/created'(this: Scoped<Session>, session: Session): void
++    /**
++     * Synchronous admission before constructing or restoring a Session from a seed.
++     * Throw to reject before any Session is returned to a persistence owner.
++     * Listeners receive metadata only, must not return promises, and cannot widen
++     * another listener's decision. No listener means the existing behavior.
++     * @mode emit
++     */
++    'session/preparing'(this: Scoped<SessionAdmission>, request: SessionAdmission): void
+     /**
+      * Emitted once when an announced session leaves the store, including
+      * publication rollback, but never for an entry whose creation announcement
+@@ -1110,6 +1118,15 @@
+   }
+ }
+ 
++/** Immutable metadata for the pre-construction session admission boundary. */
++export interface SessionAdmission {
++  readonly header: Readonly<SessionHeader>
++  readonly hasSeed: boolean
++  readonly seedEventCount: number
++  readonly inheritedEventCount: number
++  readonly restoration: boolean
++}
++
+ /** A fork source: either the live session object or its live store id. */
+ export type SessionForkSource = Session | SessionId
+ 
+@@ -1144,6 +1161,8 @@
+ export class SessionStore extends Service {
+   private store = new Map<SessionId, SessionEntry>()
+   private counter = 0
++  /** Version of the synchronous, pre-construction session admission contract. */
++  readonly preparationAdmissionVersion = 1
+   private readonly projections: SessionMessageProjection[] = []
+ 
+   /** Borrowed definitions for detached replay; contributions live until their registering fibers unload. */
+@@ -1244,16 +1263,40 @@
+       sessionId = brandString<SessionId>(id)
+     }
+     if (this.store.has(sessionId)) throw new Error(`session "${sessionId}" already exists`)
++    const meta = options?.meta, seed = options?.seed
++    const inheritedEventCount = options?.inheritedEventCount
++    const eventState = options?.eventState
++    const restoration = eventState !== undefined
++    const header = validateSessionHeader(sessionId, snapshotJsonValue(restoration ? meta : {
++      version: SESSION_FORMAT_VERSION,
++      id: sessionId,
++      createdAt: meta?.createdAt ?? Date.now(),
++      ...meta?.cwd === undefined ? {} : { cwd: meta.cwd },
++      ...meta?.parentSession === undefined ? {} : { parentSession: meta.parentSession },
++      isSeeded: meta?.isSeeded ?? false,
++      ...meta?.origin === undefined ? {} : { origin: meta.origin },
++      ...meta?.delegationDepth === undefined ? {} : { delegationDepth: meta.delegationDepth },
++      ...meta?.agentPreset === undefined ? {} : { agentPreset: meta.agentPreset },
++    }))
++    const admission: SessionAdmission = Object.freeze({ header,
++      hasSeed: seed !== undefined, seedEventCount: seed?.length ?? 0,
++      inheritedEventCount: inheritedEventCount ?? 0, restoration })
++    for (const callback of collectSessionCallbacks(this.ctx, [scopeTarget(admission, scopeOf(this.ctx)), 'session/preparing', admission])) {
++      const result = callback(admission)
++      if (result !== undefined && result !== null && typeof (result as PromiseLike<unknown>).then === 'function') {
++        void Promise.resolve(result).catch(() => {})
++        throw new Error('session/preparing listeners must decide synchronously')
++      }
++    }
+     if (options !== undefined) {
+-      const { eventState } = options
+       switch (eventState) {
+         case 'detached':
+         case 'shared-frozen': {
+           const session = Session.fromRestore(
+             sessionId,
+-            options.seed,
+-            options.meta,
+-            options.inheritedEventCount,
++            seed!,
++            header,
++            inheritedEventCount!,
+             eventState,
+             this.projections,
+           )
+@@ -1267,20 +1310,7 @@
+           assertNever(eventState, 'SessionStore.prepare event state')
+       }
+     }
+-    const seed = options?.seed
+-    const meta = options?.meta
+-    const header: SessionHeader = {
+-      version: SESSION_FORMAT_VERSION,
+-      id: sessionId,
+-      createdAt: meta?.createdAt ?? Date.now(),
+-      ...meta?.cwd === undefined ? {} : { cwd: meta.cwd },
+-      ...meta?.parentSession === undefined ? {} : { parentSession: meta.parentSession },
+-      isSeeded: meta?.isSeeded ?? false,
+-      ...meta?.origin === undefined ? {} : { origin: meta.origin },
+-      ...meta?.delegationDepth === undefined ? {} : { delegationDepth: meta.delegationDepth },
+-      ...meta?.agentPreset === undefined ? {} : { agentPreset: meta.agentPreset },
+-    }
+-    const session = Session.create(sessionId, seed, header, options?.inheritedEventCount, this.projections)
++    const session = Session.create(sessionId, seed, header, inheritedEventCount, this.projections)
+     attachments.set(session, null)
+     return session
+   }
+@@ -1494,6 +1524,7 @@
+       inheritedEventCount: SessionLogOffset(resolved === undefined ? 0 : resolved + 1),
+       meta: {
+         ...liveSource.header.cwd !== undefined ? { cwd: liveSource.header.cwd } : {},
++        parentSession: liveSource.id,
+         isSeeded: true,
+       },
+     })
+--- a/packages/api/session-controller/src/commands.ts
++++ b/packages/api/session-controller/src/commands.ts
+@@ -282,6 +282,7 @@
+         inheritedEventCount: SessionLogOffset(boundary + 1),
+         meta: {
+           ...(source.header.cwd === undefined ? {} : { cwd: source.header.cwd }),
++          parentSession: source.header.id,
+           isSeeded: true,
+           ...(composition.agentPreset === undefined
+             ? {}

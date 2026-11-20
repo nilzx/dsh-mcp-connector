@@ -42,7 +42,7 @@ const TRANSPORTS = new Set(['stdio', 'streamable-http', 'sse'])
 
 function normalizeLifecycle(value, where, server) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new McpConnectorConfigError(`${where} must be an object`)
-  onlyKeys(value, new Set(['group', 'startTools', 'allowedTools', 'localTools', 'blockedTools', 'ready', 'probe', 'maxBytes']), where)
+  onlyKeys(value, new Set(['group', 'startTools', 'allowedTools', 'localTools', 'blockedTools', 'requireCreationAdmission', 'ready', 'probe', 'maxBytes']), where)
   if (!server.runtimeMetadata || !server.turnContext?.delivery || server.delegation !== 'deny') throw new McpConnectorConfigError(`${where} requires runtimeMetadata, turnContext.delivery and delegation: deny`)
   const group = requireString(value.group, `${where}.group`)
   if (!/^[A-Za-z0-9_.:-]{1,100}$/.test(group)) throw new McpConnectorConfigError(`${where}.group must be a bounded identifier`)
@@ -52,6 +52,7 @@ function normalizeLifecycle(value, where, server) {
     return [...list]
   }
   const startTools = names('startTools'), allowedTools = names('allowedTools'), localTools = names('localTools'), blockedTools = names('blockedTools')
+  if (value.requireCreationAdmission !== undefined && typeof value.requireCreationAdmission !== 'boolean') throw new McpConnectorConfigError(`${where}.requireCreationAdmission must be a boolean`)
   const ready = value.ready, probe = requireString(value.probe, `${where}.probe`)
   if (!startTools.length || startTools.some(t => !server.runtimeMetadata.captureTools.includes(t))) throw new McpConnectorConfigError(`${where}.startTools must be explicit history capture tools`)
   if (!server.runtimeMetadata.captureTools.includes(probe)) throw new McpConnectorConfigError(`${where}.probe must be an explicit history capture tool to recover an uncertain activation`)
@@ -61,7 +62,7 @@ function normalizeLifecycle(value, where, server) {
     if (![...startTools, probe, ...allowedTools].includes(name)) throw new McpConnectorConfigError(`${where}.ready tool must be allowed during initialization`)
   }
   if (localTools.some(t => t !== 'mcp_connector_history')) throw new McpConnectorConfigError(`${where}.localTools supports only the scoped connector history reader`)
-  return { group, startTools, allowedTools, localTools, ...(blockedTools.length ? { blockedTools } : {}), ready: { ...ready }, probe,
+  return { group, startTools, allowedTools, localTools, ...(blockedTools.length ? { blockedTools } : {}), ...(value.requireCreationAdmission === true ? { requireCreationAdmission: true } : {}), ready: { ...ready }, probe,
     maxBytes: value.maxBytes === undefined ? 1048576 : requireNumber(value.maxBytes, `${where}.maxBytes`, { min: 1024, max: 4194304, integer: true }) }
 }
 

@@ -245,6 +245,24 @@ copy tool enabled in your profile. These names are configuration, not built-in
 service assumptions. Changing this deny policy preserves existing ownership
 and read cursors. Neutral conversations are not restricted by this list.
 
+For hosts implementing the proposed `sessions.preparationAdmissionVersion = 1`
+contract, the connector also checks the synchronous `session/preparing` event.
+This rejects inherited temporary destinations and unknown seeded persistent
+conversations before the destination Session is constructed or handed to a
+persistence owner. The event carries immutable metadata, not transcript text.
+Set `lifecycle.requireCreationAdmission: true` to require this stronger tier;
+startup fails when it is unavailable. The policy does not change existing
+workflow fingerprints or force extra per-turn writes. Fresh neutral roots and
+fresh helpers remain usable. Restoration relies on trusted host metadata and
+intact local ownership storage; it does not defend against privileged plugins
+or an operator forging or removing that storage.
+
+Stock dsh 0.2.2-rc.5 does not provide this event. A reviewable upstream source
+proposal is in [contrib/dsh-session-admission](contrib/dsh-session-admission/README.md).
+It is not installed or applied automatically. Fork preparation can read the
+source within the trusted host before admission; the guarantee concerns the
+destination's construction and persistence, not all source reads.
+
 Before readiness, monotonic tool guards and a dispatch recheck reject ordinary
 work. The model stream is buffered and releases only complete permitted tool
 calls, dropping text, reasoning and layout-dependent replay state. An ordinary
@@ -258,7 +276,7 @@ resumes only after that content is present on the actual model surface.
 Recovery uses durable workflow ownership. A verified persistent parent header
 can inherit the parent's same service and fixed original-history references,
 but never its context cursor. The child reloads independently. Unknown seeded
-transcripts cannot infer a parent from similar messages. dsh's ordinary UI fork
+transcripts cannot infer a parent from similar messages. Stock dsh's ordinary UI fork
 does not currently persist `parentSession`, so that fork remains blocked for
 this capability; use the original conversation. Restore with missing ownership,
 changed endpoint or changed parent creation time is also blocked. Temporary
