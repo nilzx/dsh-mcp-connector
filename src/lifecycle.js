@@ -157,6 +157,15 @@ export async function installLifecycle(ctx, connections, allows, logger, inScope
   ctx.effect(() => ctx.on('agent/created', ({ agent }) => checkTemporary(agent)), 'mcp-connector: fresh helper admission')
 
   for (const c of enabled) {
+    c.recoveryLifecycle = {
+      fingerprint: () => fingerprint(c),
+      read: id => table.get(hash(id)),
+      owns: record => record?.groups?.[c.entry.lifecycle.group]?.server === c.entry.name,
+      transform: record => ({ ...record, groups: { ...record.groups, [c.entry.lifecycle.group]: {
+        server: c.entry.name, fingerprint: fingerprint(c), phase: 'pending',
+      } } }),
+      put: (id, record) => table.put(hash(id), sessionRecord.parse(record)),
+    }
     const persistent = agent => agent?.session?.header?.origin === undefined && (agent?.session?.header?.delegationDepth ?? 0) === 0
     c.contextOwned = agent => persistent(agent) && entries(agent).some(e => e.connection === c)
     c.contextRequired = agent => persistent(agent) && entries(agent).some(e => e.connection === c && e.entry.phase === 'ready')

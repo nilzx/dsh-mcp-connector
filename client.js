@@ -351,6 +351,7 @@ window.__ModuleLoader__.load({
     function draftFromConfig(config) {
       const servers = isObject(config?.servers) ? config.servers : {}
       return {
+        ...(config?.recoveries === undefined ? {} : { recoveries: clone(config.recoveries) }),
         failOnStartupError: config?.failOnStartupError === true,
         openBrowser: config?.openBrowser !== false,
         servers: Object.entries(servers).map(([name, value]) => serverDraft(name, value)),
@@ -427,6 +428,7 @@ window.__ModuleLoader__.load({
       const servers = {}
       for (const server of draft.servers) servers[server.name.trim()] = serverConfig(server)
       const config = { servers }
+      if (draft.recoveries !== undefined) config.recoveries = clone(draft.recoveries)
       if (draft.failOnStartupError) config.failOnStartupError = true
       if (!draft.openBrowser) config.openBrowser = false
       return config

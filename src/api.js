@@ -194,6 +194,17 @@ export function registerApi(ctx, options) {
       }
       try {
         const connection = find(body.server)
+        if (body.action === 'inspect-recovery') {
+          if (!options.recovery || typeof body.sessionId !== 'string') throw new Error('A persistent conversation and configured lifecycle service are required')
+          sendJson(res, 200, { ok: true, review: await options.recovery.inspect(body.server, body.sessionId) })
+          return
+        }
+        if (body.action === 'retry-recovery') {
+          if (!options.recovery) throw new Error('No lifecycle recovery controller is configured')
+          await options.recovery.run()
+          sendJson(res, 200, { ok: true, recovery: options.recovery.status() })
+          return
+        }
         if (body.action === 'authorize') {
           const waitMs = typeof body.waitSeconds === 'number' ? Math.max(0, Math.min(120, body.waitSeconds)) * 1000 : 0
           sendJson(res, 200, { ok: true, server: await connection.authorize({ waitMs }) })

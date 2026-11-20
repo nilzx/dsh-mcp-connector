@@ -4,7 +4,7 @@ import { API_PATHS, registerApi } from '../src/api.js'
 import { createFakeContext, createWebHarness, invokeRoute } from './helpers/fake-ctx.js'
 
 /** Build a plugin-shaped context with the panel services. */
-function harness({ editable = true, rejection = undefined, auth = 'Bearer test', workspaces = [] } = {}) {
+function harness({ editable = true, rejection = undefined, auth = 'Bearer test', workspaces = [], recovery } = {}) {
   const entry = { id: 'include:mcp-connector' }
   const web = createWebHarness({ authenticated: auth === 'Bearer test' })
   if (rejection !== undefined) web.connection.requestRejection = () => rejection
@@ -44,11 +44,24 @@ function harness({ editable = true, rejection = undefined, auth = 'Bearer test',
     connections,
     find,
     logger: { warn() {} },
+    recovery,
   })
   return { ctx, web, edits, effects, entry }
 }
 
 describe('management API', () => {
+  it('keeps recovery inspection and retry behind the private host fence', async () => {
+    const calls = [], recovery = { inspect: async (...args) => (calls.push(args), { sessionId: args[1], expected: {} }),
+      run: async () => { calls.push('retry') }, status: () => ({ blockedSessions: [] }) }
+    const denied = harness({ auth: 'none', recovery })
+    assert.equal((await invokeRoute(denied.web.routes.get(API_PATHS.action), { method: 'POST', body: { action: 'inspect-recovery', server: 'fix', sessionId: 'chat' } })).status, 401)
+    assert.equal(calls.length, 0)
+    const { web } = harness({ recovery }), route = web.routes.get(API_PATHS.action)
+    const inspected = await invokeRoute(route, { method: 'POST', body: { action: 'inspect-recovery', server: 'fix', sessionId: 'chat' } })
+    assert.equal(inspected.status, 200); assert.equal(inspected.body.review.sessionId, 'chat'); assert.deepEqual(calls, [['fix', 'chat']])
+    const retried = await invokeRoute(route, { method: 'POST', body: { action: 'retry-recovery', server: 'fix' } })
+    assert.equal(retried.status, 200); assert.deepEqual(retried.body.recovery.blockedSessions, [])
+  })
   it('returns the editable config and live server state', async () => {
     const { web } = harness()
     const response = await invokeRoute(web.routes.get(API_PATHS.state))

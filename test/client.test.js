@@ -10,7 +10,7 @@ const clientPath = fileURLToPath(new URL('../client.js', import.meta.url))
  * @returns the module definition registered under the package id.
  */
 async function loadClientModule() {
-  const source = (await readFile(clientPath, 'utf8')).replace("    return {\n      inject: ['slots', 'locale'],", "    return { __test: { serverDraft, serverConfig, ScopeFields },\n      inject: ['slots', 'locale'],")
+  const source = (await readFile(clientPath, 'utf8')).replace("    return {\n      inject: ['slots', 'locale'],", "    return { __test: { serverDraft, serverConfig, ScopeFields, draftFromConfig, configFromDraft },\n      inject: ['slots', 'locale'],")
   let loaded
   const window = {
     __ModuleLoader__: {
@@ -30,6 +30,13 @@ async function loadClientModule() {
 }
 
 describe('client module', () => {
+  it('keeps private recovery operations when unrelated panel settings change', async () => {
+    const { factory } = await loadClientModule(), { draftFromConfig, configFromDraft } = factory.__test
+    assert.deepEqual(configFromDraft(draftFromConfig({ servers: {} })), { servers: {} })
+    const recoveries = [{ operationId: 'approved' }], draft = draftFromConfig({ servers: {}, recoveries })
+    draft.openBrowser = false
+    assert.deepEqual(configFromDraft(draft), { servers: {}, recoveries, openBrowser: false })
+  })
   it('registers under the package id and exposes one Settings section', async () => {
     const { definition, factory } = await loadClientModule()
     assert.equal(definition.id, '@nilzx/dsh-mcp-connector')

@@ -124,6 +124,15 @@ export async function installTurnContext(ctx, connections, allows, logger) {
   for (const connection of connections) {
     const config = connection.entry.turnContext
     if (config === undefined) continue
+    connection.recoveryContext = {
+      fingerprint: () => fingerprint(connection),
+      read: id => sessions.get(hash(id)),
+      pins: record => record?.servers?.[connection.entry.name]?.pins,
+      transform: (record, pins) => ({ ...record, servers: { ...record.servers, [connection.entry.name]: {
+        fingerprint: fingerprint(connection), arguments: {}, pins,
+      } } }),
+      put: (id, record) => sessions.put(hash(id), stateSchema.parse(record)),
+    }
     connection.contextReady = agent => {
       const current = read(agent), state = current.value?.servers?.[connection.entry.name]
       if (!state || state.fingerprint !== fingerprint(connection)) return false
@@ -227,6 +236,13 @@ export async function installTurnContext(ctx, connections, allows, logger) {
         if (connection === undefined || !allows(connection, payload.agent) || !connection.entry.enabled
           || connection.entry.turnContext === undefined || state !== undefined && state.fingerprint !== fingerprint(connection)) {
           fail('an activated server was removed, changed, or restricted')
+        }
+        if (connection.entry.lifecycle !== undefined) {
+          if (connection.contextOwned?.(payload.agent) !== true) fail('activated context has no durable workflow owner')
+          // A restored instance must load/acknowledge its persona before the
+          // server can serve memory. The workflow gate holds ordinary work;
+          // completion then forces this refresh on the next intermediate step.
+          if (connection.contextRequired?.(payload.agent) !== true) continue
         }
         const config = connection.entry.turnContext
         if (config.delivery !== undefined) {

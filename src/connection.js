@@ -427,6 +427,15 @@ export class ServerConnection {
    * Reconnect now, resetting the attempt budget.
    * @returns `{ state, authorizationUrl }` after the attempt.
    */
+  /** Private operator recovery; never registered as a model tool. */
+  async recoveryCall(rawName, args, metadata) {
+    const name = publicToolName(this.entry.name, rawName)
+    if (!this.entry.enabled || this.policies.get(name) !== 'allow' || !this.client) throw new Error('The configured recovery tool must be connected and allowed')
+    return this.client.callTool({ name: rawName, arguments: args, _meta: metadata }, {
+      timeout: this.entry.toolCallTimeoutMs, signal: this.lifecycle.signal,
+    })
+  }
+
   async reconnect() {
     if (this.disposed) return { state: 'disposed' }
     this.attempt = 0

@@ -25,6 +25,7 @@ import { compactJson } from './src/json.js'
 import { installTurnContext } from './src/turn-context.js'
 import { installRuntimeContext } from './src/runtime-context.js'
 import { installLifecycle } from './src/lifecycle.js'
+import { installRecovery } from './src/recovery.js'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'mcp-connector'
@@ -254,6 +255,7 @@ export async function apply(ctx, config) {
   await installLifecycle(ctx, connections, agentAllows, log, (connection, agent) => scopeAllows(connection, sessionDirectory(agent ?? {})))
   await installRuntimeContext(ctx, connections, agentAllows)
   await installTurnContext(ctx, connections, agentAllows, log)
+  const recovery = await installRecovery(ctx, connections, normalized.recoveries ?? [], agentAllows, log)
 
   ctx.inject(['systemPrompt'], (inner) => {
     for (const connection of connections) {
@@ -330,7 +332,7 @@ export async function apply(ctx, config) {
   }
 
   // Host half of the browser configuration panel (Settings → MCP connector).
-  registerApi(ctx, { rawConfig: config ?? {}, connections, find, logger: log })
+  registerApi(ctx, { rawConfig: config ?? {}, connections, find, logger: log, recovery })
 
   if (connections.length === 0) {
     log.info('no MCP servers configured; add them under "servers" in this plugin\'s config')
@@ -351,6 +353,7 @@ export async function apply(ctx, config) {
   }))
 
   applyAgentScopes()
+  await recovery?.run()
 
   if (normalized.failOnStartupError) {
     const failed = connections.find(connection => connection.startupError !== undefined)

@@ -75,9 +75,18 @@ test('incremental result across generation requires reload despite exact marker'
 })
 test('changing blocked tool policy preserves committed cursor and identity pins',async()=>{
  const f=await mount();f.c.entry.lifecycle={group:'g',blockedTools:['old']};await initial(f)
+ f.c.contextOwned=()=>true;f.c.contextRequired=()=>true
  f.messages.push({role:'tool',toolCallId:'manual',isError:false,content:[{type:'text',text:'initial'}]});f.c.entry.lifecycle.blockedTools.push('new')
  f.setResponse(()=>page('c2',true,'delta'));await f.pre(2,1);const wire=f.calls.filter(x=>x.wire).at(-1).wire;assert.equal(wire.cursor,'c1');assert.equal(wire.reload,undefined)
  const state=[...f.shared.values()][0].servers.s;assert.deepEqual(state.pins,['id']);assert.equal(state.delivery.pending.arguments.cursor,'c2')
+})
+
+test('restored context waits for owned initialization then forces refresh before ordinary work',async()=>{
+ const f=await mount();f.c.entry.lifecycle={group:'g'};f.c.contextOwned=()=>true;let ready=false;f.c.contextRequired=()=>ready
+ await initial(f);f.setResponse(()=>page('c2',true,'restored'))
+ const before=f.calls.length;await f.pre(2,1);assert.equal(f.calls.length,before)
+ ready=true;await f.pre(2,2);assert.ok(f.calls.length>before)
+ f.c.contextOwned=()=>false;await assert.rejects(()=>f.pre(3,1),{name:'McpTurnContextError'})
 })
 
 test('refresh notice preserves exact legacy receipts and does not suppress new writes',async()=>{

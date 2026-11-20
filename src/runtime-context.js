@@ -122,6 +122,12 @@ export async function installRuntimeContext(ctx, connections, allows) {
     return { [config.namespace]: { ...c, turn, ...(frozen === undefined ? {} : { history: frozen.history }) } }
   }
   for (const connection of enabled) {
+    connection.recoveryRuntime = {
+      fingerprint: () => fingerprint(connection),
+      read: id => table.get(hash([connection.entry.name, id])),
+      transform: record => ({ ...record, fingerprint: fingerprint(connection) }),
+      put: (id, record) => table.put(hash([connection.entry.name, id]), historyRecord.parse(record)),
+    }
     connection.runtimeInherit = async (agent, signal) => {
       const initial = owner(connection, agent)
       return serialized(initial.key, async () => {

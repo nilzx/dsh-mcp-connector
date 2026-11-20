@@ -10,6 +10,7 @@
  */
 
 import { compileToolPolicy } from './policy.js'
+import { normalizeRecoveries } from './recovery-config.js'
 
 /** Valid server namespace; kept below the public tool-name budget. */
 export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
@@ -26,7 +27,7 @@ export class McpConnectorConfigError extends Error {
   }
 }
 
-const GLOBAL_KEYS = new Set(['servers', 'failOnStartupError', 'openBrowser'])
+const GLOBAL_KEYS = new Set(['servers', 'failOnStartupError', 'openBrowser', 'recoveries'])
 const SERVER_KEYS = new Set([
   'transport', 'enabled', 'command', 'args', 'env', 'cwd', 'url', 'headers', 'auth',
   'toolCallTimeoutMs', 'startupTimeoutMs', 'closeTimeoutMs', 'reconnect', 'tools', 'scope', 'delegation', 'turnContext', 'runtimeMetadata', 'lifecycle',
@@ -488,8 +489,11 @@ export function normalizeConfig(raw) {
     throw new McpConnectorConfigError('servers must be an object mapping a server name to its settings')
   }
   const servers = Object.entries(serversInput).map(([name, value]) => normalizeServer(name, value, globalOpenBrowser))
+  let recoveries
+  try { recoveries = normalizeRecoveries(input.recoveries) } catch { throw new McpConnectorConfigError('recoveries must contain exact, unique operator-approved recovery operations') }
   return {
     servers,
+    ...(input.recoveries === undefined ? {} : { recoveries }),
     failOnStartupError: input.failOnStartupError === undefined
       ? false
       : requireBoolean(input.failOnStartupError, 'failOnStartupError'),

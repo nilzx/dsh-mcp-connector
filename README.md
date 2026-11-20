@@ -275,6 +275,73 @@ The sidecars contain references, fingerprints, cursors and delivery markers,
 not persona or memory bodies. Service-specific approval and binding rules stay
 on the server. Full real Web acceptance remains in progress.
 
+### Explicit recovery to a restored instance
+
+An activated conversation cannot follow a changed endpoint or instance by
+configuration alone. For a service with a private, exact recovery authorization,
+the connector supports operator-configured `recoveries`. This is a control-plane
+operation, not a model tool. Stop the affected conversation before changing its
+configuration; retain the same server name, session log, and all durable domains.
+
+Configure the approved target endpoint, then use the authenticated Host API
+`POST /mcp-connector/api/action` with
+`{"action":"inspect-recovery","server":"subject_a","sessionId":"CHAT_ID"}`.
+It returns the actual creation time, parent, old pins, target `configuration`
+digest, and three `expected` record hashes, without history bodies or credentials.
+Use those exact values in the plugin's top-level configuration:
+
+```yaml
+recoveries:
+  - operationId: approved-request-1
+    server: subject_a
+    sessionId: CHAT_ID
+    createdAt: 1795161600000
+    configuration: <target configuration digest from inspection>
+    expected:
+      context: <context record digest from inspection>
+      lifecycle: <workflow record digest from inspection>
+      runtime: <history record digest from inspection>
+    fromPins: [subject-id, old-instance]
+    toPins: [subject-id, restored-instance]
+    stablePins: [0]
+    tool: recover_instance
+    arguments: { requestId: approved-request-1 }
+    metadata:
+      io.example/recovery: { requestId: approved-request-1 }
+    proof:
+      operationId: /reassociation/requestId
+      before: [/reassociation/from/identityId, /reassociation/from/instance]
+      after: [/reassociation/to/identityId, /reassociation/to/instance]
+```
+
+Tool names, extra private metadata and proof pointers are service-specific
+configuration. `stablePins` must include the permanent subject identity; these
+values cannot change. Every pin must have an old/new proof mapping. The server
+must separately authenticate and authorize the exact operation, actual host
+conversation, old instance and restored target. Configuration is not a substitute
+for that authorization. Do not put credentials or memory bodies in operation
+arguments, metadata, pins or proof values. The configured tool must be connected
+and **Allow**. Private metadata cannot override actual conversation metadata or
+MCP protocol namespaces.
+
+The `mcp_connector_recovery` journal is durable before the remote request. After
+an exact structured proof, it advances monotonically through remote completion
+and each local record update. It preserves ownership/history, resets cursors,
+delivery receipts and persona acknowledgments, then re-enters initialization.
+Persona acknowledgment precedes the required full refresh; ordinary work stays
+blocked until both finish. The journal retains hashes and operation identifiers,
+not the returned context body. A completed operation is only a receipt: keeping
+it in configuration cannot rewind a later recovery.
+
+Lost responses or partial writes keep generation and tools blocked. Restore the
+connection and retry the unchanged operation through plugin restart or the
+private `retry-recovery` action. Removing a pending operation from configuration
+does not release its gate; never delete sidecars to bypass recovery. Changed
+fields under the same operation ID cannot overwrite an existing journal. The settings panel preserves
+configured operations when editing unrelated options; profiles overridden by a
+home patch must be changed in that patch, as the Host editor reports. Recovery
+does not revoke other hosts, merge writable copies, or prove model understanding.
+
 ## Connection states
 
 | State | Meaning |
