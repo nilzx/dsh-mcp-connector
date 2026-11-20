@@ -1,7 +1,8 @@
 name: Publish
 
 # Pushing a version tag is the release action: the tag must match
-# package.json, the suite must pass, and npm receives the package.
+# package.json, the suite must pass, and npm receives the package through
+# OpenID Connect — the repository stores no long-lived npm token.
 on:
   push:
     tags:
@@ -9,12 +10,15 @@ on:
   workflow_dispatch:
 
 permissions:
+  # The release job writes the GitHub release and reads the repository.
   contents: write
+  # npm trusted publishing: GitHub mints a short-lived OIDC token per run.
   id-token: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Trusted publishing only accepts GitHub-hosted runners.
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -27,7 +31,6 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          registry-url: https://registry.npmjs.org
 
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -47,10 +50,15 @@ jobs:
             }
           "
 
+      # npm 11.15+ exchanges the workflow's OIDC token for a short-lived
+      # publish token; pnpm 12's publisher does not implement that exchange.
+      - name: Use a publisher with trusted publishing support
+        run: |
+          npm install -g npm@^11.15.0
+          npm --version
+
       - name: Publish to npm
-        run: pnpm publish --access public --provenance --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance
 
       - name: Create the GitHub release
         if: startsWith(github.ref, 'refs/tags/')
