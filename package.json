@@ -1,6 +1,6 @@
 {
   "name": "@nilzx/dsh-mcp-connector",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Connect MCP servers to DeepSeek Harness: stdio, Streamable HTTP, SSE, OAuth sign-in, per-tool permissions, and workspace scoping, all managed from a Settings panel.",
   "type": "module",
   "license": "MIT",
