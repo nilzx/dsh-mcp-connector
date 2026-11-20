@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "MCP 连接器",
-    "description": "通过 stdio、Streamable HTTP 或 SSE 连接 MCP 服务器，用 OAuth 登录，并为每个已发现的工具单独设置 allow / ask / deny / off 授权策略。在本插件的 `servers` 配置中添加服务器；`mcp_connector_status` 与 `mcp_connector_authorize` 工具可查看状态并发起登录。"
+    "description": "在 设置 → MCP 连接器 中连接 stdio、Streamable HTTP 或 SSE 服务器，用 OAuth 登录，并为每个工具单独设置允许、询问、禁止或隐藏。"
   }
 }

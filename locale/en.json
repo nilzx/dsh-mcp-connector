@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "MCP connector",
-    "description": "Connect MCP servers over stdio, Streamable HTTP, or SSE, sign in with OAuth, and give every discovered tool its own allow / ask / deny / off policy. Add servers under this plugin's `servers` config; the `mcp_connector_status` and `mcp_connector_authorize` tools report state and drive sign-in."
+    "description": "Connect MCP servers over stdio, Streamable HTTP, or SSE with OAuth sign-in, and set allow / ask / block / hide for every tool. Manage everything in Settings → MCP connector."
   }
 }

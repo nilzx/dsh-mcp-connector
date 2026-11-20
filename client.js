@@ -1032,7 +1032,20 @@ window.__ModuleLoader__.load({
       const applyState = useCallback((state, { force }) => {
         setSnapshot({ loading: false, error: null, editable: state.editable, reason: state.reason, servers: state.servers ?? [] })
         if (force || !dirtyRef.current) {
-          setDraft(draftFromConfig(state.config))
+          const next = draftFromConfig(state.config)
+          // Refreshing must not collapse a card the user opened; only the
+          // configuration is replaced, not the disclosure state.
+          const previous = draftRef.current
+          if (previous !== null) {
+            for (const server of next.servers) {
+              const before = previous.servers.find(candidate => candidate.originalName === server.originalName)
+              if (before !== undefined) {
+                server.expanded = before.expanded
+                server.advanced = before.advanced
+              }
+            }
+          }
+          setDraft(next)
           setDirty(false)
         }
       }, [])
