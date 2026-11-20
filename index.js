@@ -24,6 +24,7 @@ import { registerApi } from './src/api.js'
 import { compactJson } from './src/json.js'
 import { installTurnContext } from './src/turn-context.js'
 import { installRuntimeContext } from './src/runtime-context.js'
+import { installLifecycle } from './src/lifecycle.js'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'mcp-connector'
@@ -250,6 +251,7 @@ export async function apply(ctx, config) {
       && (header.delegationDepth === undefined || header.delegationDepth === 0)
   }
 
+  await installLifecycle(ctx, connections, agentAllows, log)
   await installRuntimeContext(ctx, connections, agentAllows)
   await installTurnContext(ctx, connections, agentAllows, log)
 

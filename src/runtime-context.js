@@ -6,6 +6,7 @@ import { readPointer } from './turn-context.js'
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const fail = message => { throw new Error(`MCP runtime context: ${message}`) }
 const historyRecord = z.object({ sessionId: z.string(), createdAt: z.number(), fingerprint: z.string(),
+  source: z.object({ sessionId: z.string(), createdAt: z.number() }).strict().optional(),
   state: z.enum(['pending', 'ready']), through: z.number().int(), history: z.record(z.string(), z.unknown()),
   refs: z.array(z.object({ itemId: z.string(), sequences: z.array(z.number().int()) })) }).strict()
 export const runtimeContextDomain = { name: 'mcp_connector_runtime', version: 1,
@@ -121,6 +122,21 @@ export async function installRuntimeContext(ctx, connections, allows) {
     return { [config.namespace]: { ...c, turn, ...(frozen === undefined ? {} : { history: frozen.history }) } }
   }
   for (const connection of enabled) {
+    connection.runtimeInherit = async (agent, signal) => {
+      const initial = owner(connection, agent)
+      return serialized(initial.key, async () => {
+        const { c, key, expected, value } = owner(connection, agent)
+        if (value) return
+        if (c.parentId === null || c.parentId === c.id) fail('verified parent conversation is required')
+        const parent = table.get(hash([connection.entry.name, c.parentId]))
+        const snapshot = await query.readSession(c.parentId, signal)
+        signal.throwIfAborted()
+        if (!parent || parent.sessionId !== c.parentId || snapshot.session.id !== c.parentId
+          || snapshot.session.createdAt !== parent.createdAt || parent.fingerprint !== expected) fail('parent history ownership is unavailable')
+        await table.put(key, historyRecord.parse({ ...parent, sessionId: c.id, createdAt: c.createdAt,
+          source: parent.source ?? { sessionId: parent.sessionId, createdAt: parent.createdAt } }))
+      })
+    }
     connection.runtimeMeta = async (tool, exec) => metadata(connection, tool, exec)
     connection.runtimeCall = async (tool, args, exec, invoke) => {
       const config = connection.entry.runtimeMetadata, initial = owner(connection, exec?.agent)
@@ -139,15 +155,13 @@ export async function installRuntimeContext(ctx, connections, allows) {
         // Persist the boundary before sending. An ambiguous transport failure must
         // never move it forward, even across a process restart.
         const result = await invoke(args, metadata(connection, tool, exec, value))
-        if (result?.isError === true) {
-          if (fresh && config.captureRollback !== undefined) {
-            let rejected = false
-            try { rejected = readPointer(result.structuredContent, config.captureRollback.pointer) === config.captureRollback.value } catch {}
-            if (rejected) await table.delete(key)
-          }
-          return result
-        }
         exec.signal.throwIfAborted()
+        if (value.state === 'pending' && config.captureRollback !== undefined) {
+          let rejected = false
+          try { rejected = readPointer(result?.structuredContent, config.captureRollback.pointer) === config.captureRollback.value } catch {}
+          if (rejected) { await table.delete(key); return result }
+        }
+        if (result?.isError === true) return result
         if (value.state !== 'ready') await table.put(key, { ...value, state: 'ready' })
         return result
       })
@@ -163,8 +177,9 @@ export async function installRuntimeContext(ctx, connections, allows) {
       if (!connection || !allows(connection, exec?.agent)) fail('history service is unavailable')
       const record = history(connection, exec.agent), offset = args.offset ?? 0, limit = args.limit ?? 5
       if (!Number.isSafeInteger(offset) || offset < 0 || offset > record.refs.length || !Number.isSafeInteger(limit) || limit < 1 || limit > 20) fail('invalid history page')
-      const snapshot = await query.readSession(record.sessionId, exec.signal)
-      if (snapshot.session.createdAt !== record.createdAt) fail('history owner changed')
+      const source = record.source ?? record
+      const snapshot = await query.readSession(source.sessionId, exec.signal)
+      if (snapshot.session.id !== source.sessionId || snapshot.session.createdAt !== source.createdAt) fail('history owner changed')
       const bySeq = new Map(snapshot.events.filter(e => e.seq <= record.through).map(e => [e.seq, e]))
       const items = []
       let bytes = 0

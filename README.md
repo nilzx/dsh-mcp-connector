@@ -181,9 +181,10 @@ the connector that supplies these facts.
 explicit activation call. Ordinary queries and local history reads never create
 a boundary. The candidate is durable before dispatch and becomes ready only on
 success. An uncertain transport result retains it for retry. `captureRollback`
-releases a newly captured boundary only when an error response explicitly
-matches the configured **no-binding/no-effect** statement; do not configure it
-for a generic error field. Later ambiguous retries cannot release the boundary.
+releases a pending boundary only when a response explicitly matches the
+configured **no-binding/no-effect** statement; do not configure it for a generic
+error field. A recovery probe can make that statement on success. Ambiguous
+retries and already-established history never release the boundary.
 
 `historyTools` receive the fixed manifest, and `mcp_connector_history` reads the
 matching original text in bounded pages. Both require successful capture. This
@@ -196,10 +197,63 @@ The history sidecar stores references and metadata only. The current limit is
 256 KiB. Temporary agents cannot export history. Metadata/history require dsh's
 `sessionQuery` and `storageDomain` services.
 
-These primitives do not automate a service's initialization workflow, fork or
-restore policy, or approval process. A service must enforce its own binding and
-initialization rules. Real Web acceptance of the complete persona lifecycle is
-still pending; earlier Web evidence covers the bounded summary path.
+### Initialization workflows
+
+Opt in to a generic server-reported initialization workflow with `lifecycle`:
+
+```yaml
+delegation: deny
+runtimeMetadata:
+  namespace: io.example/conversation
+  captureTools: [start_context, resume_context]
+  historyTools: [initialize_context]
+  captureRollback: { pointer: /established, value: false }
+# Also configure turnContext with delivery as described above.
+lifecycle:
+  group: personal-context
+  startTools: [start_context]
+  probe: resume_context
+  allowedTools: [initialize_context, process_history, finish_context]
+  localTools: [mcp_connector_history]
+  ready:
+    start_context: /ready
+    resume_context: /ready
+    initialize_context: /ready
+    process_history: /ready
+    finish_context: /ready
+```
+
+All tool names and JSON pointers are configuration. Start and probe tools must
+be explicit capture tools. A start persists ownership before dispatch; another
+server in the same group cannot take over that conversation. Interrupted starts
+are checked through the configured probe. It must have `allow` policy for
+automatic recovery; other permissions are not elevated.
+
+Before readiness, monotonic tool guards and a dispatch recheck reject ordinary
+work. The model stream is buffered and releases only complete permitted tool
+calls, dropping text, reasoning and layout-dependent replay state. An ordinary
+answer, invalid call, cancellation or partial stream releases no output. This
+requires dsh's public `llm/stream` middleware and shared tool pipeline. Custom
+executors that bypass that pipeline and other in-process plugins are outside
+this guarantee. Once the server reports readiness, the controller forces the
+first complete context refresh even on an intermediate step. Ordinary work
+resumes only after that content is present on the actual model surface.
+
+Recovery uses durable workflow ownership. A verified persistent parent header
+can inherit the parent's same service and fixed original-history references,
+but never its context cursor. The child reloads independently. Unknown seeded
+transcripts cannot infer a parent from similar messages. dsh's ordinary UI fork
+does not currently persist `parentSession`, so that fork remains blocked for
+this capability; use the original conversation. Restore with missing ownership,
+changed endpoint or changed parent creation time is also blocked. Temporary
+helpers cannot use the workflow server or its scoped history reader. A host
+that forks a raw parent transcript can still copy already visible persona or
+memory text. Blocking that copy before storage requires a host spawn/fork gate;
+this path is not yet accepted as isolated.
+
+The sidecars contain references, fingerprints, cursors and delivery markers,
+not persona or memory bodies. Service-specific approval and binding rules stay
+on the server. Full real Web acceptance remains in progress.
 
 ## Connection states
 

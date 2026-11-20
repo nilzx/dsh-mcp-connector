@@ -7,7 +7,7 @@ import { contentToText } from './tools.js'
 const scalar = z.union([z.string().max(4096), z.number().finite(), z.boolean(), z.null()])
 const deliveryMarker = z.object({ id: z.string(), callId: z.string().optional(), digest: z.string().length(64) }).strict()
 const deliveryState = z.object({ generation: z.number().int().safe().nonnegative(), anchor: deliveryMarker.optional(),
-  pending: z.object({ marker: deliveryMarker, arguments: z.record(z.string(), scalar) }).strict().optional() }).strict()
+  pending: z.object({ marker: deliveryMarker, arguments: z.record(z.string(), scalar), full: z.boolean().optional() }).strict().optional() }).strict()
 const stateSchema = z.object({
   sessionId: z.string().min(1), createdAt: z.number().int().safe().nonnegative(),
   servers: z.record(z.string(), z.object({
@@ -42,11 +42,11 @@ export function readPointer(value, pointer) {
 function fingerprint(connection) {
   const e = connection.entry
   return hash([e.transport, e.url ?? null, e.command ?? null, e.args ?? null,
-    e.cwd ?? null, e.turnContext, ...(e.runtimeMetadata === undefined ? [] : [e.runtimeMetadata])])
+    e.cwd ?? null, e.turnContext, ...(e.runtimeMetadata === undefined ? [] : [e.runtimeMetadata]), ...(e.lifecycle === undefined ? [] : [e.lifecycle])])
 }
 
 /** Construct a frozen public UserMessage attributed to this connector. */
-function contextMessage(name, text, id = randomUUID()) {
+export function contextMessage(name, text, id = randomUUID()) {
   return Object.freeze({ id, role: 'user',
     source: Object.freeze({ kind: 'mcp-connector-context', form: 'notice',
       summary: `Refreshed MCP context: ${name}` }),
@@ -56,7 +56,7 @@ function contextMessage(name, text, id = randomUUID()) {
 }
 
 /** Inspect the actual current model surface, never a model-supplied receipt. */
-function reconcileDelivery(state, agent, name) {
+export function reconcileDelivery(state, agent, name) {
   const generation = agent?.session?.surface?.contentGeneration
   if (!Number.isSafeInteger(generation) || generation < 0 || typeof agent.session.deriveMessages !== 'function') fail('durable model surface observation is unavailable')
   const messages = agent.session.deriveMessages()
@@ -71,11 +71,11 @@ function reconcileDelivery(state, agent, name) {
   let next = state
   const delivery = state?.delivery
   const sameGeneration = delivery?.generation === generation
-  if (sameGeneration && delivery.pending && present(delivery.pending.marker)) {
+  if (delivery?.pending && (sameGeneration || delivery.pending.full === true) && present(delivery.pending.marker)) {
     next = { ...state, arguments: delivery.pending.arguments,
       delivery: { generation, anchor: delivery.pending.marker } }
   }
-  const anchorPresent = sameGeneration && present(next?.delivery?.anchor)
+  const anchorPresent = next?.delivery?.generation === generation && present(next?.delivery?.anchor)
   return { state: next, generation, changed: next !== state,
     reload: state !== undefined && !anchorPresent,
     undelivered: next?.delivery?.pending !== undefined,
@@ -119,6 +119,13 @@ export async function installTurnContext(ctx, connections, allows, logger) {
   for (const connection of connections) {
     const config = connection.entry.turnContext
     if (config === undefined) continue
+    connection.contextReady = agent => {
+      const current = read(agent), state = current.value?.servers?.[connection.entry.name]
+      if (!state || state.fingerprint !== fingerprint(connection)) return false
+      if (config.delivery === undefined) return true
+      const observed = reconcileDelivery(state, agent, connection.entry.name)
+      return !observed.reload && !observed.undelivered
+    }
     connection.contextCall = async (rawName, args, exec, invoke) => {
       if (rawName !== config.tool) return invoke(args)
       if (!allows(connection, exec?.agent)) fail('server is unavailable to this agent')
@@ -169,7 +176,7 @@ export async function installTurnContext(ctx, connections, allows, logger) {
           : { fingerprint: fingerprint(connection), arguments: old?.arguments ?? {}, pins,
             delivery: { generation: delivery.generation,
               ...(!delivery.reload && old?.delivery?.anchor ? { anchor: old.delivery.anchor } : {}),
-              pending: { arguments: nextArgs, marker: { id: randomUUID(), digest: hash(text), ...(typeof exec.callId === 'string' ? { callId: exec.callId } : {}) } } } }
+              pending: { arguments: nextArgs, full: old === undefined || delivery.reload, marker: { id: randomUUID(), digest: hash(text), ...(typeof exec.callId === 'string' ? { callId: exec.callId } : {}) } } } }
         const updated = { ...current.value, servers: { ...current.value.servers, [connection.entry.name]: nextState } }
         await sessions.put(current.key, stateSchema.parse(updated))
         return result
@@ -193,7 +200,8 @@ export async function installTurnContext(ctx, connections, allows, logger) {
         const h = payload.agent.session.header
         // An old/seeded/forked transcript is not proof of a neutral conversation.
         // It can continue without context, but cannot silently acquire a binding.
-        if (payload.turn !== 1 || payload.step !== 1 || h.isSeeded === true || h.parentSession !== undefined) {
+        const owned = candidates.some(c => c.contextOwned?.(payload.agent))
+        if (!owned && (payload.turn !== 1 || payload.step !== 1 || h.isSeeded === true || h.parentSession !== undefined)) {
           fail('unknown resumed or inherited conversation; start a new unseeded conversation')
         }
         await serialized(payload.agent, async () => {
@@ -205,19 +213,20 @@ export async function installTurnContext(ctx, connections, allows, logger) {
         current = read(payload.agent)
       }
       const active = Object.entries(current.value.servers)
+      for (const c of candidates) if (!active.some(([name]) => name === c.entry.name) && c.contextRequired?.(payload.agent)) active.push([c.entry.name, undefined])
       if (active.length === 0) return decision
       const userTurn = payload.step === 1 || decision.messages.some(m => m.source?.kind === 'user')
       const contexts = []
       for (const [name, state] of active) {
         const connection = connections.find(c => c.entry.name === name)
         if (connection === undefined || !allows(connection, payload.agent) || !connection.entry.enabled
-          || connection.entry.turnContext === undefined || state.fingerprint !== fingerprint(connection)) {
+          || connection.entry.turnContext === undefined || state !== undefined && state.fingerprint !== fingerprint(connection)) {
           fail('an activated server was removed, changed, or restricted')
         }
         const config = connection.entry.turnContext
         if (config.delivery !== undefined) {
           const observed = reconcileDelivery(state, payload.agent, name)
-          if (!userTurn && !observed.undelivered && !observed.reload) {
+          if (state !== undefined && !userTurn && !observed.undelivered && !observed.reload) {
             if (observed.changed) await serialized(payload.agent, async () => {
               const latest = read(payload.agent)
               // Another tool may have completed while this acknowledgment queued.

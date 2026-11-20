@@ -29,7 +29,7 @@ export class McpConnectorConfigError extends Error {
 const GLOBAL_KEYS = new Set(['servers', 'failOnStartupError', 'openBrowser'])
 const SERVER_KEYS = new Set([
   'transport', 'enabled', 'command', 'args', 'env', 'cwd', 'url', 'headers', 'auth',
-  'toolCallTimeoutMs', 'startupTimeoutMs', 'closeTimeoutMs', 'reconnect', 'tools', 'scope', 'delegation', 'turnContext', 'runtimeMetadata',
+  'toolCallTimeoutMs', 'startupTimeoutMs', 'closeTimeoutMs', 'reconnect', 'tools', 'scope', 'delegation', 'turnContext', 'runtimeMetadata', 'lifecycle',
 ])
 const AUTH_KEYS = new Set([
   'type', 'token', 'scopes', 'clientId', 'clientSecret', 'clientName', 'callbackPort',
@@ -38,6 +38,31 @@ const AUTH_KEYS = new Set([
 const RECONNECT_KEYS = new Set(['enabled', 'initialDelayMs', 'maxDelayMs', 'maxAttempts'])
 const SCOPE_KEYS = new Set(['mode', 'paths'])
 const TRANSPORTS = new Set(['stdio', 'streamable-http', 'sse'])
+
+function normalizeLifecycle(value, where, server) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new McpConnectorConfigError(`${where} must be an object`)
+  onlyKeys(value, new Set(['group', 'startTools', 'allowedTools', 'localTools', 'ready', 'probe', 'maxBytes']), where)
+  if (!server.runtimeMetadata || !server.turnContext?.delivery || server.delegation !== 'deny') throw new McpConnectorConfigError(`${where} requires runtimeMetadata, turnContext.delivery and delegation: deny`)
+  const group = requireString(value.group, `${where}.group`)
+  if (!/^[A-Za-z0-9_.:-]{1,100}$/.test(group)) throw new McpConnectorConfigError(`${where}.group must be a bounded identifier`)
+  const names = key => {
+    const list = value[key] ?? []
+    if (!Array.isArray(list) || list.length > 32 || list.some(n => typeof n !== 'string' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(n)) || new Set(list).size !== list.length) throw new McpConnectorConfigError(`${where}.${key} must be unique tool names`)
+    return [...list]
+  }
+  const startTools = names('startTools'), allowedTools = names('allowedTools'), localTools = names('localTools')
+  const ready = value.ready, probe = requireString(value.probe, `${where}.probe`)
+  if (!startTools.length || startTools.some(t => !server.runtimeMetadata.captureTools.includes(t))) throw new McpConnectorConfigError(`${where}.startTools must be explicit history capture tools`)
+  if (!server.runtimeMetadata.captureTools.includes(probe)) throw new McpConnectorConfigError(`${where}.probe must be an explicit history capture tool to recover an uncertain activation`)
+  if (!ready || typeof ready !== 'object' || Array.isArray(ready) || Object.keys(ready).length > 32 || [...startTools, probe].some(t => !Object.hasOwn(ready, t))) throw new McpConnectorConfigError(`${where}.ready must map start and probe tools to readiness pointers`)
+  for (const [name, pointer] of Object.entries(ready)) {
+    if (!/^[A-Za-z0-9_.:-]{1,128}$/.test(name) || typeof pointer !== 'string' || !pointer.startsWith('/') || pointer.length > 512 || /~(?![01])/.test(pointer) || pointer.split('/').some(p => ['__proto__', 'constructor', 'prototype'].includes(p))) throw new McpConnectorConfigError(`${where}.ready contains an invalid tool or JSON pointer`)
+    if (![...startTools, probe, ...allowedTools].includes(name)) throw new McpConnectorConfigError(`${where}.ready tool must be allowed during initialization`)
+  }
+  if (localTools.some(t => t !== 'mcp_connector_history')) throw new McpConnectorConfigError(`${where}.localTools supports only the scoped connector history reader`)
+  return { group, startTools, allowedTools, localTools, ready: { ...ready }, probe,
+    maxBytes: value.maxBytes === undefined ? 1048576 : requireNumber(value.maxBytes, `${where}.maxBytes`, { min: 1024, max: 4194304, integer: true }) }
+}
 
 function normalizeRuntimeMetadata(value, where) {
   if (value === undefined) return undefined
@@ -412,6 +437,8 @@ function normalizeServer(name, value, globalOpenBrowser) {
       ? (auth.openBrowser ?? globalOpenBrowser)
       : false,
   }
+
+  if (value.lifecycle !== undefined) common.lifecycle = normalizeLifecycle(value.lifecycle, `${where}.lifecycle`, common)
 
   if (transport === 'stdio') {
     const command = requireString(value.command, `${where}.command`)

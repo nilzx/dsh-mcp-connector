@@ -66,3 +66,10 @@ test('an intermediate acknowledgment cannot overwrite a concurrently completed c
  const state=[...f.shared.values()][0].servers.s;
  assert.equal(state.arguments.cursor,'c1'); assert.equal(state.delivery.pending.arguments.cursor,'c2');
 });
+test('full result confirms across generation only when exact content remains',async()=>{
+ const f=await mount();await initial(f);f.messages.push({role:'tool',toolCallId:'manual',isError:false,content:[{type:'text',text:'initial'}]});f.a.session.surface.contentGeneration++;f.setResponse(()=>page('c2',true,'next'));await f.pre(2,1);assert.equal(f.calls.filter(x=>x.wire).at(-1).wire.cursor,'c1');assert.equal(f.calls.filter(x=>x.wire).at(-1).wire.reload,undefined)
+ for(const mode of ['missing','changed']){const x=await mount();await initial(x);if(mode==='changed')x.messages.push({role:'tool',toolCallId:'manual',isError:false,content:[{type:'text',text:'different'}]});x.a.session.surface.contentGeneration++;x.setResponse(()=>page('c2',true));await x.pre(2,1);assert.equal(x.calls.filter(v=>v.wire).at(-1).wire.reload,true)}
+})
+test('incremental result across generation requires reload despite exact marker',async()=>{
+ const f=await mount();await initial(f);f.messages.push({role:'tool',toolCallId:'manual',isError:false,content:[{type:'text',text:'initial'}]});f.setResponse(()=>page('c2',true,'delta'));const d=await f.pre(2,1);f.messages.push(d.messages.at(-1));f.a.session.surface.contentGeneration++;await f.pre(3,1);assert.equal(f.calls.filter(x=>x.wire).at(-1).wire.reload,true)
+})

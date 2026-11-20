@@ -83,3 +83,17 @@ test('summary-only replacement without originals is never represented as origina
  const s={session:{id:'s'},events:[event(0,'turn/start',{turn:1}),{...event(1,'user/message',{role:'user',source:{kind:'user'},content:[{type:'text',text:'summary'}]}),surfaceOp:{op:'replace',startSeq:99,endSeq:99},sourceEventSeqs:[99]},event(2,'turn/end',{turn:1,reason:{kind:'completed'}})]}
  const h=historyFromSnapshot(s);assert.ok(h.history.gaps.some(g=>g.reason==='summary_only'));assert.ok(h.history.items.every(i=>i.material!=='original'))
 })
+test('probe resolves pending rollback, but ready history cannot be rolled back',async()=>{
+ const f=await fixture(),a=agent();f.c.entry.runtimeMetadata.captureTools=['activate','probe'];f.c.entry.runtimeMetadata.captureRollback={pointer:'/activationEstablished',value:false};await f.pre(a,1,1);const exec={agent:a,signal:f.signal}
+ await assert.rejects(()=>f.c.runtimeCall('activate',{},exec,async()=>{throw Error('lost')}));assert.equal([...f.shared.values()][0].state,'pending')
+ await f.c.runtimeCall('probe',{},exec,async()=>({structuredContent:{activationEstablished:false},content:[]}));assert.equal(f.shared.size,0)
+ await f.c.runtimeCall('activate',{},exec,async()=>({content:[{type:'text',text:'ok'}]}));assert.equal([...f.shared.values()][0].state,'ready')
+ await f.c.runtimeCall('probe',{},exec,async()=>({structuredContent:{activationEstablished:false},content:[]}));assert.equal([...f.shared.values()][0].state,'ready')
+})
+test('runtime inherit requires original parent time and matching endpoint',async()=>{
+ const f=await fixture(),parent=agent();await f.pre(parent,1,1);await f.c.runtimeCall('activate',{}, {agent:parent,signal:f.signal},async()=>({content:[]}))
+ const child=agent({id:'child',createdAt:456,parentSession:'session-a',isSeeded:true});await f.c.runtimeInherit(child,f.signal)
+ const record=[...f.shared.values()].find(v=>v.sessionId==='child');assert.deepEqual(record.source,{sessionId:'session-a',createdAt:123});assert.equal(record.history.items.length,1)
+ const bad=agent({id:'bad',createdAt:789,parentSession:'session-a',isSeeded:true});const s=snapshot();s.session.createdAt=999;f.setSnapshot(s);await assert.rejects(()=>f.c.runtimeInherit(bad,f.signal))
+ f.setSnapshot(snapshot());f.c.entry.command='changed';await assert.rejects(()=>f.c.runtimeInherit(bad,f.signal))
+})

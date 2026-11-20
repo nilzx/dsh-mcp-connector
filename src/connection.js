@@ -398,7 +398,8 @@ export class ServerConnection {
             )
             const invoke = arguments_ => this.runtimeCall === undefined ? call(arguments_)
               : this.runtimeCall(tool.name, arguments_, exec, call)
-            return this.contextCall === undefined ? invoke(args) : this.contextCall(tool.name, args, exec, invoke)
+            const withContext = arguments_ => this.contextCall === undefined ? invoke(arguments_) : this.contextCall(tool.name, arguments_, exec, invoke)
+            return this.lifecycleCall === undefined ? withContext(args) : this.lifecycleCall(tool.name, args, exec, withContext)
           },
         })
         const dispose = this.ctx.tools.register(definition)
