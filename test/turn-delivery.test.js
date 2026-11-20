@@ -73,3 +73,9 @@ test('full result confirms across generation only when exact content remains',as
 test('incremental result across generation requires reload despite exact marker',async()=>{
  const f=await mount();await initial(f);f.messages.push({role:'tool',toolCallId:'manual',isError:false,content:[{type:'text',text:'initial'}]});f.setResponse(()=>page('c2',true,'delta'));const d=await f.pre(2,1);f.messages.push(d.messages.at(-1));f.a.session.surface.contentGeneration++;await f.pre(3,1);assert.equal(f.calls.filter(x=>x.wire).at(-1).wire.reload,true)
 })
+test('changing blocked tool policy preserves committed cursor and identity pins',async()=>{
+ const f=await mount();f.c.entry.lifecycle={group:'g',blockedTools:['old']};await initial(f)
+ f.messages.push({role:'tool',toolCallId:'manual',isError:false,content:[{type:'text',text:'initial'}]});f.c.entry.lifecycle.blockedTools.push('new')
+ f.setResponse(()=>page('c2',true,'delta'));await f.pre(2,1);const wire=f.calls.filter(x=>x.wire).at(-1).wire;assert.equal(wire.cursor,'c1');assert.equal(wire.reload,undefined)
+ const state=[...f.shared.values()][0].servers.s;assert.deepEqual(state.pins,['id']);assert.equal(state.delivery.pending.arguments.cursor,'c2')
+})

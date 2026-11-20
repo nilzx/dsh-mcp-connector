@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
-import { describe, it } from 'node:test'
+import { describe, it, test } from 'node:test'
 import { apply } from '../index.js'
 import { normalizeConfig } from '../src/config.js'
 import { createFakeContext, waitFor } from './helpers/fake-ctx.js'
@@ -92,4 +92,14 @@ describe('server instructions and delegation', () => {
       for (const a of [child, depth, unknown, outside]) assert.ok(a.restrictions.some(r => r.deny.includes('mcp__fix__echo')))
     } finally { await h.dispose() }
   })
+})
+test('history reader is visible only to eligible persistent agents',async()=>{
+ const root=agent('root',{id:'root',createdAt:1,cwd:'/work/a'}), child=agent('child',{id:'child',createdAt:2,cwd:'/work/a',origin:'subagent',delegationDepth:1}), depth=agent('depth',{id:'depth',createdAt:3,cwd:'/work/a',delegationDepth:1}), unknown=agent('unknown',null), outside=agent('outside',{id:'outside',createdAt:4,cwd:'/work/b'})
+ const records=new Map(),table={get:k=>records.get(k),put:async(k,v)=>records.set(k,v),delete:async k=>records.delete(k)}
+ const h=createFakeContext({services:{agents:{list:()=>[root,child,depth,unknown,outside]},workingDirectory:{get:s=>s.header?.cwd},storageDomain:{open:async()=>({table:()=>table,close:async()=>{}})},sessionQuery:{readSession:async()=>({session:{id:'root',createdAt:1},events:[]})}}})
+ await apply(h.ctx,{servers:{fix:{command:process.execPath,args:[fixture],scope:{mode:'workspaces',paths:['/work/a']},delegation:'deny',runtimeMetadata:{namespace:'io.example/session',historyTools:['echo'],captureTools:['echo']},reconnect:{enabled:false}}}})
+ try {
+  assert.ok(h.tools.has('mcp_connector_history'));assert.ok(!root.restrictions.some(r=>r.deny.includes('mcp_connector_history')))
+  for(const a of [child,depth,unknown,outside]){assert.ok(a.restrictions.some(r=>r.deny.includes('mcp_connector_history')));await assert.rejects(()=>h.callTool('mcp_connector_history',{server:'fix'},a))}
+ } finally {await h.dispose()}
 })

@@ -215,6 +215,7 @@ lifecycle:
   probe: resume_context
   allowedTools: [initialize_context, process_history, finish_context]
   localTools: [mcp_connector_history]
+  blockedTools: [subagent_fork]
   ready:
     start_context: /ready
     resume_context: /ready
@@ -228,6 +229,15 @@ be explicit capture tools. A start persists ownership before dispatch; another
 server in the same group cannot take over that conversation. Interrupted starts
 are checked through the configured probe. It must have `allow` policy for
 automatic recovery; other permissions are not elevated.
+
+`blockedTools` lists host tool names that must remain unavailable after this
+conversation starts the workflow, including after readiness. For example,
+`subagent_fork` copies parent history in the standard dsh profile. The shared
+tool guard and dispatch recheck stop configured tools before their bodies run;
+use the fresh `subagent` tool with task materials only. List every equivalent
+copy tool enabled in your profile. These names are configuration, not built-in
+service assumptions. Changing this deny policy preserves existing ownership
+and read cursors. Neutral conversations are not restricted by this list.
 
 Before readiness, monotonic tool guards and a dispatch recheck reject ordinary
 work. The model stream is buffered and releases only complete permitted tool
@@ -246,10 +256,14 @@ transcripts cannot infer a parent from similar messages. dsh's ordinary UI fork
 does not currently persist `parentSession`, so that fork remains blocked for
 this capability; use the original conversation. Restore with missing ownership,
 changed endpoint or changed parent creation time is also blocked. Temporary
-helpers cannot use the workflow server or its scoped history reader. A host
-that forks a raw parent transcript can still copy already visible persona or
-memory text. Blocking that copy before storage requires a host spawn/fork gate;
-this path is not yet accepted as isolated.
+helpers cannot see or use the workflow server or its scoped history reader.
+Seeded temporary helpers are also rejected at agent creation and before model
+generation if their parent has workflow ownership or they enter an enabled
+workflow workspace. That fallback can occur after the seed was stored; only
+the configured tool gate prevents copying before execution. Direct host APIs,
+UI fork commands, unlisted copy tools and in-process plugins are outside that
+copy-before-storage guarantee. A universal guarantee needs a host admission
+hook before creating any inherited seed. Fresh helpers remain supported.
 
 The sidecars contain references, fingerprints, cursors and delivery markers,
 not persona or memory bodies. Service-specific approval and binding rules stay

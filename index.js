@@ -251,7 +251,7 @@ export async function apply(ctx, config) {
       && (header.delegationDepth === undefined || header.delegationDepth === 0)
   }
 
-  await installLifecycle(ctx, connections, agentAllows, log)
+  await installLifecycle(ctx, connections, agentAllows, log, (connection, agent) => scopeAllows(connection, sessionDirectory(agent ?? {})))
   await installRuntimeContext(ctx, connections, agentAllows)
   await installTurnContext(ctx, connections, agentAllows, log)
 
@@ -278,6 +278,12 @@ export async function apply(ctx, config) {
     for (const connection of connections) {
       if (agentAllows(connection, agent)) continue
       denied.push(...connection.toolNames)
+    }
+    const header = agent.session.header
+    const persistent = header !== undefined && header.origin === undefined && (header.delegationDepth ?? 0) === 0
+    if (connections.some(c => c.entry.runtimeMetadata !== undefined)
+      && (!persistent || !connections.some(c => c.entry.runtimeMetadata !== undefined && c.entry.enabled && agentAllows(c, agent)))) {
+      denied.push('mcp_connector_history')
     }
     const previous = scopeRestrictions.get(agent.id)
     if (previous !== undefined) {

@@ -41,8 +41,9 @@ export function readPointer(value, pointer) {
 /** Bind automation to the configured endpoint and exact mapping contract. */
 function fingerprint(connection) {
   const e = connection.entry
+  const workflow = e.lifecycle === undefined ? undefined : Object.fromEntries(Object.entries(e.lifecycle).filter(([key]) => key !== 'blockedTools'))
   return hash([e.transport, e.url ?? null, e.command ?? null, e.args ?? null,
-    e.cwd ?? null, e.turnContext, ...(e.runtimeMetadata === undefined ? [] : [e.runtimeMetadata]), ...(e.lifecycle === undefined ? [] : [e.lifecycle])])
+    e.cwd ?? null, e.turnContext, ...(e.runtimeMetadata === undefined ? [] : [e.runtimeMetadata]), ...(workflow === undefined ? [] : [workflow])])
 }
 
 /** Construct a frozen public UserMessage attributed to this connector. */

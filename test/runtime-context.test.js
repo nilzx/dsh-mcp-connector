@@ -49,6 +49,7 @@ test('real MCP wire receives host metadata and rejects argument override', async
   for(const listener of h.listeners.get('agent/pre-step')??[]) await listener({agent:a,turn:2,step:1},async()=>({kind:'enter',messages:[]}))
   const out=await h.callTool('mcp__wire__probe',{},a); const sent=JSON.parse(out.content[0].text); assert.equal(sent['io.example/session'].id,'session-a'); assert.equal(sent['io.example/session'].createdAt,123)
   await assert.rejects(()=>h.callTool('mcp__wire__probe',{_meta:{'io.example/session':{id:'forged'}}},a))
+  await assert.rejects(()=>h.callTool('mcp__wire__probe',{}),/persistent session|unavailable|conversation/)
  } finally { await h.dispose(); await rm(dir,{recursive:true,force:true}) }
 })
 test('only explicit successful capture freezes history; clear failures retry and uncertainty preserves boundary', async () => {

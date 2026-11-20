@@ -13,10 +13,13 @@ const owner = z.object({ server: z.string(), fingerprint: z.string(), phase: z.e
 const sessionRecord = z.object({ sessionId: z.string(), createdAt: z.number().int().safe().nonnegative(), groups: z.record(z.string(), owner) }).strict()
 export const lifecycleDomain = { name: 'mcp_connector_lifecycle', version: 1, tables: { sessions: { valueSchema: sessionRecord } } }
 const fail = message => { throw new Error(`MCP initialization: ${message}`) }
-const fingerprint = c => hash([c.entry.name, c.entry.transport, c.entry.url, c.entry.command, c.entry.args, c.entry.cwd,
-  c.entry.runtimeMetadata, c.entry.turnContext, c.entry.lifecycle])
+const fingerprint = c => {
+  const { blockedTools: _policy, ...workflow } = c.entry.lifecycle
+  return hash([c.entry.name, c.entry.transport, c.entry.url, c.entry.command, c.entry.args, c.entry.cwd,
+    c.entry.runtimeMetadata, c.entry.turnContext, workflow])
+}
 
-export async function installLifecycle(ctx, connections, allows, logger) {
+export async function installLifecycle(ctx, connections, allows, logger, inScope = allows) {
   const enabled = connections.filter(c => c.entry.lifecycle !== undefined)
   if (!enabled.length) return
   if (typeof ctx.tools?.guard !== 'function' || !ctx.get('llm')) fail('monotonic tool guards and model stream middleware are required')
@@ -112,13 +115,16 @@ export async function installLifecycle(ctx, connections, allows, logger) {
     return loaded(entry, agent, c.entry.name) && (config.allowedTools.some(t => publicToolName(c.entry.name, t) === publicName) || config.localTools.includes(publicName))
   }
   function denial(exec) {
-    if (!exec.agent) return 'This initialized MCP workflow requires a persistent calling conversation.'
+    // Standalone service invocations have no conversation to inherit. The
+    // server scope/runtime guards still reject protected MCP calls without it.
+    if (!exec.agent) return undefined
     // Unbound temporary helpers remain independent; their server-specific access
     // is handled by the normal scope guard and authenticated metadata checks.
     const h = exec.agent.session?.header
     if (h?.origin !== undefined || (h?.delegationDepth ?? 0) !== 0) return undefined
     try {
       for (const { entry, connection: c } of entries(exec.agent)) {
+        if (c.entry.lifecycle.blockedTools?.includes(exec.name)) return 'This tool can transfer protected conversation context. Use a fresh helper with only the task materials.'
         const start = enabled.find(other => other.entry.lifecycle.startTools.some(t => publicToolName(other.entry.name, t) === exec.name))
         if (start && start.entry.lifecycle.group === c.entry.lifecycle.group && start.entry.name !== c.entry.name) return 'This conversation already owns another service in the same initialization group.'
         if (!ready(entry, c, exec.agent) && !permitted(c, entry, exec.agent, exec.name)) return 'Finish the active MCP initialization and admit its full context before other work.'
@@ -134,6 +140,21 @@ export async function installLifecycle(ctx, connections, allows, logger) {
     if (reason !== undefined) fail(reason)
     return next()
   }, { prepend: true }), 'mcp-connector: initialization dispatch guard')
+
+  // Tool gates prevent configured copy operations before their bodies run.
+  // A separately created/restored seeded helper still must not reach a model.
+  function checkTemporary(agent) {
+    const h = agent?.session?.header
+    if (h?.origin === undefined && (h?.delegationDepth ?? 0) === 0) return
+    const inherited = h.isSeeded === true || (agent.session.inheritedEventCount ?? 0) > 0
+    if (!inherited) return
+    const parent = typeof h.parentSession === 'string' ? table.get(hash(h.parentSession)) : undefined
+    if (!Object.keys(parent?.groups ?? {}).length && !enabled.some(c => c.entry.enabled !== false && inScope(c, agent))) return
+    // A seeded helper has no safe neutral attestation. In particular, absence
+    // of a parent sidecar is not evidence that copied content is unbound.
+    fail('temporary helpers must start with fresh context; inherited transcripts are not admitted')
+  }
+  ctx.effect(() => ctx.on('agent/created', ({ agent }) => checkTemporary(agent)), 'mcp-connector: fresh helper admission')
 
   for (const c of enabled) {
     const persistent = agent => agent?.session?.header?.origin === undefined && (agent?.session?.header?.delegationDepth ?? 0) === 0
@@ -189,7 +210,7 @@ export async function installLifecycle(ctx, connections, allows, logger) {
     const decision = await next()
     if (decision.kind !== 'enter') return decision
     const h = payload.agent?.session?.header
-    if (h?.origin !== undefined || (h?.delegationDepth ?? 0) !== 0) return decision
+    if (h?.origin !== undefined || (h?.delegationDepth ?? 0) !== 0) { checkTemporary(payload.agent); return decision }
     const contexts = []
     try {
       await inherit(payload.agent, payload.signal)
