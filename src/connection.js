@@ -388,13 +388,16 @@ export class ServerConnection {
             if (connected === undefined) {
               throw new Error(`MCP server "${this.entry.name}" is not connected; retrying in the background`)
             }
-            const invoke = arguments_ => connected.callTool(
-              { name: tool.name, arguments: arguments_ },
+            if (this.runtimeMeta !== undefined && Object.hasOwn(args, '_meta')) throw new Error('MCP runtime metadata cannot be supplied by tool arguments')
+            const call = (arguments_, metadata) => connected.callTool(
+              { name: tool.name, arguments: arguments_, ...(metadata === undefined ? {} : { _meta: metadata }) },
               {
                 timeout: this.entry.toolCallTimeoutMs,
                 signal: AbortSignal.any([exec.signal, this.lifecycle.signal]),
               },
             )
+            const invoke = arguments_ => this.runtimeCall === undefined ? call(arguments_)
+              : this.runtimeCall(tool.name, arguments_, exec, call)
             return this.contextCall === undefined ? invoke(args) : this.contextCall(tool.name, args, exec, invoke)
           },
         })

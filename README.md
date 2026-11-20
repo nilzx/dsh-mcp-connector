@@ -122,6 +122,85 @@ Turning off or uninstalling the plugin removes enforcement. This facility does
 not establish a server-authenticated identity binding or guarantee that a
 service's bounded context contains every change.
 
+## Incremental delivery and trusted runtime metadata (unreleased)
+
+For a paged, read-only context tool, extend `turnContext` with:
+
+```yaml
+turnContext:
+  tool: refresh_context
+  state:
+    cursor: /cursor
+  pins: [/identity/id, /identity/instance]
+  pagination:
+    complete: /complete
+    maxPages: 128
+  delivery:
+    reloadArguments: { reload: true }
+  maxBytes: 1048576
+```
+
+Pagination follows managed state until the completion field is exactly `true`.
+All pages must preserve pins and fit the total byte/page limits; stalled pages,
+partial failure, and overflow block delivery. The complete response text includes
+every page; `structuredContent` contains the final page's state.
+
+With `delivery`, a read position stays pending until its exact tool result or
+connector-authored context is present on the actual model surface. The durable
+sidecar stores only cursors, random message IDs, content hashes, and the surface
+revision, never response bodies. A restart or failed generation before admission
+re-reads from the last admitted position. A replacement/compaction of existing
+model context triggers `reloadArguments`; reload applies only to the first page.
+Intermediate steps repair undelivered context but do not refresh an already
+admitted result unnecessarily. This observes recorded model input, not human
+viewing or model understanding. It requires the public dsh `Session` surface and
+message projection APIs. PTC or another executor can still reject the automatic
+native call, in which case generation is blocked.
+
+A server that authenticates the connector may also accept host-derived MCP
+request metadata. Configuration is independent of service/tool names:
+
+```yaml
+runtimeMetadata:
+  namespace: io.example/conversation
+  captureTools: [activate_context]
+  historyTools: [initialize_context]
+  captureRollback:
+    pointer: /activationEstablished
+    value: false
+```
+
+Every request includes the actual persistent session ID, creation time, parent
+ID, temporary/seeded flags and current user-turn identity under the configured
+`_meta` namespace. Model arguments cannot override it. Reserved MCP namespaces
+are rejected. Keep the server's connector credential outside model context.
+Metadata by itself is not authentication; a server must authenticate and trust
+the connector that supplies these facts.
+
+`captureTools` freeze completed conversation exchanges immediately before the
+explicit activation call. Ordinary queries and local history reads never create
+a boundary. The candidate is durable before dispatch and becomes ready only on
+success. An uncertain transport result retains it for retry. `captureRollback`
+releases a newly captured boundary only when an error response explicitly
+matches the configured **no-binding/no-effect** statement; do not configure it
+for a generic error field. Later ambiguous retries cannot release the boundary.
+
+`historyTools` receive the fixed manifest, and `mcp_connector_history` reads the
+matching original text in bounded pages. Both require successful capture. This
+uses the retained completed conversation log, including original exchanges
+shadowed by compaction; it excludes replacement summaries, system prompts,
+private reasoning and tool output. Nontext/missing material and unattributed
+inherited prefixes are explicit gaps. Digests reject changed or missing originals.
+The history sidecar stores references and metadata only. The current limit is
+5,000 manifest items and 100 gaps; a single delivered original is limited to
+256 KiB. Temporary agents cannot export history. Metadata/history require dsh's
+`sessionQuery` and `storageDomain` services.
+
+These primitives do not automate a service's initialization workflow, fork or
+restore policy, or approval process. A service must enforce its own binding and
+initialization rules. Real Web acceptance of the complete persona lifecycle is
+still pending; earlier Web evidence covers the bounded summary path.
+
 ## Connection states
 
 | State | Meaning |

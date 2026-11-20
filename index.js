@@ -23,6 +23,7 @@ import { policyDecision } from './src/policy.js'
 import { registerApi } from './src/api.js'
 import { compactJson } from './src/json.js'
 import { installTurnContext } from './src/turn-context.js'
+import { installRuntimeContext } from './src/runtime-context.js'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'mcp-connector'
@@ -249,6 +250,7 @@ export async function apply(ctx, config) {
       && (header.delegationDepth === undefined || header.delegationDepth === 0)
   }
 
+  await installRuntimeContext(ctx, connections, agentAllows)
   await installTurnContext(ctx, connections, agentAllows, log)
 
   ctx.inject(['systemPrompt'], (inner) => {

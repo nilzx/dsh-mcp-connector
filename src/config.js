@@ -29,7 +29,7 @@ export class McpConnectorConfigError extends Error {
 const GLOBAL_KEYS = new Set(['servers', 'failOnStartupError', 'openBrowser'])
 const SERVER_KEYS = new Set([
   'transport', 'enabled', 'command', 'args', 'env', 'cwd', 'url', 'headers', 'auth',
-  'toolCallTimeoutMs', 'startupTimeoutMs', 'closeTimeoutMs', 'reconnect', 'tools', 'scope', 'delegation', 'turnContext',
+  'toolCallTimeoutMs', 'startupTimeoutMs', 'closeTimeoutMs', 'reconnect', 'tools', 'scope', 'delegation', 'turnContext', 'runtimeMetadata',
 ])
 const AUTH_KEYS = new Set([
   'type', 'token', 'scopes', 'clientId', 'clientSecret', 'clientName', 'callbackPort',
@@ -39,11 +39,38 @@ const RECONNECT_KEYS = new Set(['enabled', 'initialDelayMs', 'maxDelayMs', 'maxA
 const SCOPE_KEYS = new Set(['mode', 'paths'])
 const TRANSPORTS = new Set(['stdio', 'streamable-http', 'sse'])
 
+function normalizeRuntimeMetadata(value, where) {
+  if (value === undefined) return undefined
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new McpConnectorConfigError(`${where} must be an object`)
+  onlyKeys(value, new Set(['namespace', 'historyTools', 'captureTools', 'captureRollback']), where)
+  const namespace = requireString(value.namespace, `${where}.namespace`)
+  if (namespace.length > 200 || !/^[A-Za-z0-9.-]+\/[A-Za-z0-9_.-]+$/.test(namespace) || namespace.startsWith('io.modelcontextprotocol/')) throw new McpConnectorConfigError(`${where}.namespace must be a non-reserved namespaced metadata key`)
+  const names = key => {
+    const list = value[key] ?? []
+    if (!Array.isArray(list) || list.length > 16 || list.some(v => typeof v !== 'string' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(v)) || new Set(list).size !== list.length) throw new McpConnectorConfigError(`${where}.${key} must list at most 16 unique tool names`)
+    return [...list]
+  }
+  const historyTools = names('historyTools'), captureTools = names('captureTools')
+  if (historyTools.length && !captureTools.length) throw new McpConnectorConfigError(`${where}.captureTools is required for frozen history`)
+  let captureRollback
+  if (value.captureRollback !== undefined) {
+    const r = value.captureRollback
+    if (!r || typeof r !== 'object' || Array.isArray(r)) throw new McpConnectorConfigError(`${where}.captureRollback must be an object`)
+    onlyKeys(r, new Set(['pointer', 'value']), `${where}.captureRollback`)
+    const pointer = requireString(r.pointer, `${where}.captureRollback.pointer`)
+    if (!pointer.startsWith('/') || pointer.length > 512 || /~(?![01])/.test(pointer) || pointer.split('/').some(p => ['__proto__', 'prototype', 'constructor'].includes(p))) throw new McpConnectorConfigError(`${where}.captureRollback.pointer must be a safe non-root JSON pointer`)
+    if (!(r.value === null || typeof r.value === 'boolean' || typeof r.value === 'string' && r.value.length <= 4096 || typeof r.value === 'number' && Number.isFinite(r.value))) throw new McpConnectorConfigError(`${where}.captureRollback.value must be a bounded scalar`)
+    if (!captureTools.length) throw new McpConnectorConfigError(`${where}.captureRollback requires captureTools`)
+    captureRollback = { pointer, value: r.value }
+  }
+  return { namespace, historyTools, captureTools, ...(captureRollback === undefined ? {} : { captureRollback }) }
+}
+
 /** Validate the opt-in generic context tool and structured state mappings. */
 function normalizeTurnContext(value, where) {
   if (value === undefined) return undefined
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new McpConnectorConfigError(`${where} must be an object`)
-  onlyKeys(value, new Set(['tool', 'arguments', 'state', 'pins', 'maxBytes']), where)
+  onlyKeys(value, new Set(['tool', 'arguments', 'state', 'pins', 'maxBytes', 'pagination', 'delivery']), where)
   const pointer = (v, path) => {
     requireString(v, path)
     if (!v.startsWith('/') || v.length > 512 || /~(?![01])/.test(v)
@@ -66,7 +93,23 @@ function normalizeTurnContext(value, where) {
     || Object.keys(args).some(k => ['__proto__', 'constructor', 'prototype'].includes(k) || Object.hasOwn(state, k))
     || Object.values(args).some(v => !(v === null || typeof v === 'boolean' || (typeof v === 'string' && v.length <= 4096) || (typeof v === 'number' && Number.isFinite(v))))
     || Object.keys(args).length > 32) throw new McpConnectorConfigError(`${where}.arguments must contain bounded scalar values and cannot override managed state`)
-  return { tool: requireString(value.tool, `${where}.tool`), arguments: { ...args }, state: { ...state }, pins: [...pins],
+  let pagination, delivery
+  if (value.pagination !== undefined) {
+    const p = value.pagination
+    if (!p || typeof p !== 'object' || Array.isArray(p)) throw new McpConnectorConfigError(`${where}.pagination must be an object`)
+    onlyKeys(p, new Set(['complete', 'maxPages']), `${where}.pagination`)
+    if (!Object.keys(state).length) throw new McpConnectorConfigError(`${where}.pagination requires managed state`)
+    pagination = { complete: pointer(p.complete, `${where}.pagination.complete`), maxPages: p.maxPages === undefined ? 128 : requireNumber(p.maxPages, `${where}.pagination.maxPages`, { min: 1, max: 512, integer: true }) }
+  }
+  if (value.delivery !== undefined) {
+    const d = value.delivery
+    if (!d || typeof d !== 'object' || Array.isArray(d)) throw new McpConnectorConfigError(`${where}.delivery must be an object`)
+    onlyKeys(d, new Set(['reloadArguments']), `${where}.delivery`)
+    const r = d.reloadArguments
+    if (!r || typeof r !== 'object' || Array.isArray(r) || !Object.keys(r).length || Object.keys(r).length > 16 || Object.keys(r).some(k => !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(k) || ['__proto__', 'constructor', 'prototype'].includes(k) || Object.hasOwn(state, k)) || Object.values(r).some(v => !(v === null || typeof v === 'boolean' || typeof v === 'string' && v.length <= 4096 || typeof v === 'number' && Number.isFinite(v)))) throw new McpConnectorConfigError(`${where}.delivery.reloadArguments must be bounded scalars outside managed state`)
+    delivery = { reloadArguments: { ...r } }
+  }
+  return { tool: requireString(value.tool, `${where}.tool`), arguments: { ...args }, state: { ...state }, pins: [...pins], ...(pagination === undefined ? {} : { pagination }), ...(delivery === undefined ? {} : { delivery }),
     maxBytes: value.maxBytes === undefined ? 131072 : requireNumber(value.maxBytes, `${where}.maxBytes`, { min: 1, max: 1048576, integer: true }) }
 }
 
@@ -363,6 +406,7 @@ function normalizeServer(name, value, globalOpenBrowser) {
     tools: compileToolPolicy(value.tools, `${where}.tools`),
     scope: normalizeScope(value.scope, `${where}.scope`),
     delegation: value.delegation ?? 'allow',
+    ...(value.runtimeMetadata === undefined ? {} : { runtimeMetadata: normalizeRuntimeMetadata(value.runtimeMetadata, `${where}.runtimeMetadata`) }),
     ...(value.turnContext === undefined ? {} : { turnContext: normalizeTurnContext(value.turnContext, `${where}.turnContext`) }),
     openBrowser: auth.type === 'oauth'
       ? (auth.openBrowser ?? globalOpenBrowser)
