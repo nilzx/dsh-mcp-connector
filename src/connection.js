@@ -143,6 +143,10 @@ export class ServerConnection {
         this.logger.info(`server "${this.entry.name}": authorization received, reconnecting`)
         await this.reconnect()
       }
+      this.flow.onAuthorizationFailed = () => {
+        this.status.authorizationUrl = undefined
+        this.pendingSince = undefined
+      }
     }
     return expanded.entry
   }

@@ -61,7 +61,12 @@ export class OAuthRecordStore {
     const current = (await this.read()) ?? defaultPayload(this.serverName)
     const next = mutate(current)
     if (next === undefined) return current
-    const stamped = { ...next, version: OAUTH_RECORD_VERSION, server: this.serverName, updatedAt: new Date().toISOString() }
+    const stamped = toJsonValue({
+      ...next,
+      version: OAUTH_RECORD_VERSION,
+      server: this.serverName,
+      updatedAt: new Date().toISOString(),
+    })
     await this.credentials.modifyRecord(this.key, () => ({ kind: 'grant', payload: stamped }))
     this.cache = stamped
     this.loaded = true
@@ -122,4 +127,19 @@ function normalizePayload(record, serverName) {
   if (payload.version !== OAUTH_RECORD_VERSION) return undefined
   if (typeof payload.server === 'string' && payload.server !== serverName) return undefined
   return payload
+}
+
+/**
+ * Reduce a payload to exactly what JSON can represent.
+ *
+ * The credential store rejects `undefined` members, functions, class instances
+ * and non-finite numbers. The OAuth SDK hands providers objects that may carry
+ * any of those — a `URL` inside discovery metadata, an explicit `undefined`
+ * when a flow ends — so the record is normalized before every write.
+ *
+ * @param value - the candidate payload.
+ * @returns an equal value that survives a JSON round trip.
+ */
+function toJsonValue(value) {
+  return JSON.parse(JSON.stringify(value))
 }

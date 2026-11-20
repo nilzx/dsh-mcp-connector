@@ -60,6 +60,8 @@ export class OAuthFlow {
     this.authorizationUrl = undefined
     /** Notified after a callback redeems the code; the connection reconnects. */
     this.onAuthorized = undefined
+    /** Notified after a callback fails, so the connection drops the stale URL. */
+    this.onAuthorizationFailed = undefined
   }
 
   /**
@@ -193,6 +195,11 @@ export class OAuthFlow {
         message: 'DeepSeek Harness now has an access token for this server. You can close this window and return to the app.',
       }
     } catch (error) {
+      // A code that failed to redeem must not be retried with the same link:
+      // drop the pending verifier and let the next attempt start clean.
+      this.authorizationUrl = undefined
+      await this.store.invalidate('verifier').catch(() => {})
+      this.onAuthorizationFailed?.()
       this.logger.warn(`authorization callback failed: ${error instanceof Error ? error.message : String(error)}`)
       return {
         ok: false,

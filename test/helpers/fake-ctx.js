@@ -104,6 +104,25 @@ export function createFakeContext({ services = {} } = {}) {
   return { ctx, tools, listeners, effects, callTool, preExecute, dispose }
 }
 
+/** Reject values the real credential store cannot persist. */
+function assertJsonValue(value, seen = new Set()) {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new TypeError('non-finite number in credential record')
+    return
+  }
+  if (typeof value === 'object') {
+    if (seen.has(value)) throw new TypeError('cyclic credential record')
+    if (Object.getPrototypeOf(value) === Object.prototype || Array.isArray(value)) {
+      seen.add(value)
+      for (const nested of Object.values(value)) assertJsonValue(nested, seen)
+      seen.delete(value)
+      return
+    }
+  }
+  throw new TypeError('credential record holds a value JSON cannot represent')
+}
+
 /**
  * Create an in-memory credentials service plus writable references.
  * @param options - `{ values, records }` initial contents.
@@ -124,7 +143,12 @@ export function createCredentialStore({ values = {}, records = {} } = {}) {
     },
     async modifyRecord(key, mutate) {
       const next = await mutate(stored.get(key))
-      if (next !== undefined) stored.set(key, next)
+      // Mirror credentials-local: a record must survive a lossless JSON round
+      // trip, so undefined members and class instances are rejected.
+      if (next !== undefined) {
+        assertJsonValue(next)
+        stored.set(key, next)
+      }
       return next
     },
     async deleteRecord(key) {

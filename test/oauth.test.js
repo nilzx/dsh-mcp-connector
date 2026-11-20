@@ -157,3 +157,30 @@ describe('OAuth discovery through the 401 challenge', () => {
     }
   })
 })
+
+describe('failed authorization callbacks', () => {
+  it('drops the stale link and starts a fresh authorization', async () => {
+    const local = await startOAuthMcpServer()
+    const store = createCredentialStore()
+    const harness = await mount(local, store, { type: 'oauth', openBrowser: false })
+    try {
+      const [pending] = (await harness.callTool('mcp_connector_status')).servers
+      assert.equal(pending.state, 'authorizing')
+
+      const authorization = await fetch(pending.authorizationUrl, { redirect: 'manual' })
+      const callbackUrl = new URL(authorization.headers.get('location'))
+      callbackUrl.searchParams.set('state', 'not-the-pending-state')
+      const rejected = await fetch(callbackUrl)
+      assert.equal(rejected.status, 400)
+      assert.match(await rejected.text(), /state does not match/)
+
+      const retried = await harness.callTool('mcp_connector_authorize', { server: 'remote' })
+      assert.equal(retried.state, 'authorizing')
+      assert.notEqual(retried.authorizationUrl, pending.authorizationUrl)
+      assert.ok(retried.authorizationUrl.includes('state='))
+    } finally {
+      await harness.dispose()
+      await local.close()
+    }
+  })
+})
