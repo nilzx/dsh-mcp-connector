@@ -41,7 +41,7 @@ export function readPointer(value, pointer) {
 /** Bind automation to the configured endpoint and exact mapping contract. */
 function fingerprint(connection) {
   const e = connection.entry
-  const workflow = e.lifecycle === undefined ? undefined : Object.fromEntries(Object.entries(e.lifecycle).filter(([key]) => key !== 'blockedTools'))
+  const workflow = e.lifecycle === undefined ? undefined : Object.fromEntries(Object.entries(e.lifecycle).filter(([key]) => !['blockedTools', 'requireCreationAdmission'].includes(key)))
   return hash([e.transport, e.url ?? null, e.command ?? null, e.args ?? null,
     e.cwd ?? null, e.turnContext, ...(e.runtimeMetadata === undefined ? [] : [e.runtimeMetadata]), ...(workflow === undefined ? [] : [workflow])])
 }
@@ -57,7 +57,7 @@ export function contextMessage(name, text, id = randomUUID(), refreshed = false)
 }
 
 /** Inspect the actual current model surface, never a model-supplied receipt. */
-export function reconcileDelivery(state, agent, name) {
+export function reconcileDelivery(state, agent, name, basis) {
   const generation = agent?.session?.surface?.contentGeneration
   if (!Number.isSafeInteger(generation) || generation < 0 || typeof agent.session.deriveMessages !== 'function') fail('durable model surface observation is unavailable')
   const messages = agent.session.deriveMessages()
@@ -76,7 +76,19 @@ export function reconcileDelivery(state, agent, name) {
   let next = state
   const delivery = state?.delivery
   const sameGeneration = delivery?.generation === generation
-  if (delivery?.pending && (sameGeneration || delivery.pending.full === true) && present(delivery.pending.marker)) {
+  // A system prompt replacement can advance the host generation after refresh
+  // but before model dispatch. Admit an incremental result across that boundary
+  // only with this process's exact, immutable, ordered non-system surface proof.
+  // A retained receipt alone cannot prove that earlier memory survived a fold.
+  let basisRetained = false
+  if (!sameGeneration && delivery?.pending?.full !== true && basis?.session === agent.session
+    && basis.markerId === delivery?.pending?.marker.id && basis.messages.length > 0
+    && basis.messages.every(Object.isFrozen)) {
+    let offset = 0
+    for (const message of messages) if (message === basis.messages[offset]) offset++
+    basisRetained = offset === basis.messages.length
+  }
+  if (delivery?.pending && (sameGeneration || delivery.pending.full === true || basisRetained) && present(delivery.pending.marker)) {
     next = { ...state, arguments: delivery.pending.arguments,
       delivery: { generation, anchor: delivery.pending.marker } }
   }
@@ -95,6 +107,10 @@ export async function installTurnContext(ctx, connections, allows, logger) {
   const domain = await facility.open(turnContextDomain)
   const sessions = domain.table('sessions')
   const pending = new Map()
+  // Ephemeral references only: never persist transcript text or use a proof
+  // from another Session/process. A restart without proof reloads safely.
+  const deliveryBases = new WeakMap()
+  const observe = (state, agent, name) => reconcileDelivery(state, agent, name, deliveryBases.get(agent.session)?.get(name))
   let disposed = false
   ctx.effect(() => async () => { disposed = true; await Promise.allSettled([...pending.values()]); await domain.close() },
     'mcp-connector: durable turn context')
@@ -137,7 +153,7 @@ export async function installTurnContext(ctx, connections, allows, logger) {
       const current = read(agent), state = current.value?.servers?.[connection.entry.name]
       if (!state || state.fingerprint !== fingerprint(connection)) return false
       if (config.delivery === undefined) return true
-      const observed = reconcileDelivery(state, agent, connection.entry.name)
+      const observed = observe(state, agent, connection.entry.name)
       return !observed.reload && !observed.undelivered
     }
     connection.contextCall = async (rawName, args, exec, invoke) => {
@@ -148,8 +164,12 @@ export async function installTurnContext(ctx, connections, allows, logger) {
         if (current.value === undefined) fail('no durable context state; start a new unseeded conversation')
         let old = own(current.value.servers, connection.entry.name) ? current.value.servers[connection.entry.name] : undefined
         if (old !== undefined && old.fingerprint !== fingerprint(connection)) fail('server configuration changed; continue in a new conversation')
-        const delivery = config.delivery === undefined ? undefined : reconcileDelivery(old, exec.agent, connection.entry.name)
+        const delivery = config.delivery === undefined ? undefined : observe(old, exec.agent, connection.entry.name)
         if (delivery) old = delivery.state
+        const retained = delivery && !delivery.reload && old !== undefined
+          ? exec.agent.session.deriveMessages().filter(m => m.role !== 'system') : []
+        const basis = retained.length && retained.every(Object.isFrozen)
+          ? { session: exec.agent.session, messages: Object.freeze(retained) } : undefined
         for (const field of Object.keys(config.state)) {
           if (own(args, field) && (old === undefined || args[field] !== old.arguments[field])) fail('caller-selected context state is not allowed')
         }
@@ -193,6 +213,10 @@ export async function installTurnContext(ctx, connections, allows, logger) {
               pending: { arguments: nextArgs, full: old === undefined || delivery.reload, marker: { id: randomUUID(), digest: hash(text), ...(typeof exec.callId === 'string' ? { callId: exec.callId } : {}) } } } }
         const updated = { ...current.value, servers: { ...current.value.servers, [connection.entry.name]: nextState } }
         await sessions.put(current.key, stateSchema.parse(updated))
+        let proofs = deliveryBases.get(exec.agent.session)
+        if (!proofs) deliveryBases.set(exec.agent.session, proofs = new Map())
+        if (nextState.delivery?.pending?.full === false && basis) proofs.set(connection.entry.name, { ...basis, markerId: nextState.delivery.pending.marker.id })
+        else proofs.delete(connection.entry.name)
         return result
       })
     }
@@ -246,12 +270,12 @@ export async function installTurnContext(ctx, connections, allows, logger) {
         }
         const config = connection.entry.turnContext
         if (config.delivery !== undefined) {
-          const observed = reconcileDelivery(state, payload.agent, name)
+          const observed = observe(state, payload.agent, name)
           if (state !== undefined && !userTurn && !observed.undelivered && !observed.reload) {
             if (observed.changed) await serialized(payload.agent, async () => {
               const latest = read(payload.agent)
               // Another tool may have completed while this acknowledgment queued.
-              const admitted = reconcileDelivery(latest.value.servers[name], payload.agent, name)
+              const admitted = observe(latest.value.servers[name], payload.agent, name)
               if (admitted.changed) await sessions.put(latest.key, stateSchema.parse({ ...latest.value, servers: { ...latest.value.servers, [name]: admitted.state } }))
             })
             continue

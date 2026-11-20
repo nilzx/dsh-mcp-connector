@@ -395,3 +395,12 @@ does not revoke other hosts, merge writable copies, or prove model understanding
 ## License
 
 MIT
+
+
+When the host replaces its system prompt between refresh and model dispatch,
+the connector may confirm the pending incremental result only if every prior
+non-system message remains in order as the same immutable object and the exact
+new result is present. This proof is bound to the live Session and held only in
+memory; it stores no transcript copy. A changed, reordered or missing message,
+a different Session object, or a process restart without proof cannot use this
+exception. Compaction still requires a full reload of the same service.
