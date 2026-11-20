@@ -1090,7 +1090,11 @@ window.__ModuleLoader__.load({
       useEffect(() => { void load({ attempts: 2 }) }, [load])
 
       useEffect(() => {
-        const timer = setInterval(() => { void load({ attempts: 1 }) }, 8000)
+        const timer = setInterval(() => {
+          // Never replace a draft being edited or written.
+          if (dirtyRef.current || savingRef.current) return
+          void load({ attempts: 1 })
+        }, 8000)
         return () => clearInterval(timer)
       }, [load])
 
