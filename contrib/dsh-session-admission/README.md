@@ -19,3 +19,36 @@ The host can read source history and build an intermediate seed before this even
 Local isolated tests used the real Cordis Context and compiled SessionStore: denial before seed element access and caller persistence (including restore), frozen metadata, promise rejection, persistent fork parent metadata, and scope routing. Connector tests additionally cover unsupported-host startup refusal, source-less seeds, protected parents across scope changes, and restored ownership. These are boundary checks, not a claim that the entire dsh UI/API matrix has passed.
 
 The source context is from the MIT-licensed [DeepSeek Harness repository](https://github.com/deepseek-ai/deepseek-harness).
+
+
+## Reproducible isolated build
+
+The checked builder requires Node, Git, an installed dsh 0.2.2-rc.5, and esbuild 0.28.2. It verifies the two reviewed source hashes, refuses existing output directories and paths inside the installed dsh, copies sources into a new output directory, applies the patch there, and emits both modules plus a hash manifest. It never edits the installed distribution or user profiles.
+
+```sh
+node contrib/dsh-session-admission/build.mjs "/absolute/path/to/@deepseek-ai/dsh" "/absolute/path/to/new-build" "/absolute/path/to/esbuild/lib/main.js"
+```
+
+Use the output only in a separate test profile based on the full dsh Web app bundles. In that profile's patch, disable the original services and insert the built modules; `name` on an existing patch entry is a match condition, not a module replacement:
+
+```yaml
+- id: session
+  disabled: true
+- id: session-controller
+  disabled: true
+- insert:
+    - id: admitted-sessions
+      name: /absolute/path/to/new-build/session/index.js
+    - id: admitted-session-controller
+      name: /absolute/path/to/new-build/api-session-controller/index.js
+```
+
+On each protected connector workflow set `lifecycle.requireCreationAdmission: true`. Keep an isolated `DSH_HOME` and the existing scope, endpoint, credentials and ownership stores for any conversation being restored. Never invent parent metadata or discard sidecars to work around a refusal. A headless-only profile needs only the Session service, but cannot necessarily resume the `standard` preset produced by the Web fork API; use the full host for those forks.
+
+The real-module connector test accepts `DSH_CORDIS_MODULE` pointing to the installed Cordis module and `DSH_SESSION_ADMISSION_MODULE` pointing to the newly built Session module:
+
+```sh
+node --test test/creation-admission.test.js test/real-session-admission.test.js
+```
+
+Set those environment variables before the command; without them the real-module test is explicitly skipped. The final local validation additionally exercised the full host's ordinary fork API, persisted 219 inherited events with their actual parent, resumed that child through the full host, loaded the original subject's current persona, and independently refreshed its memory. It did not simulate a browser click, install the patch globally, or establish upstream support.
