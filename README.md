@@ -30,6 +30,14 @@ Open **Settings → MCP connector** and choose **Add server**:
 
 The agent now sees tools named `mcp__github__<tool>`. Ask it to "use the github tools to list open issues".
 
+## Inside a server card
+
+Expanding a server never dumps its connection details. The card opens on three sub-tabs:
+
+- **Tools** — the default permission and one row per discovered tool.
+- **Scope** — whether the server is global or limited to selected workspaces.
+- **Configuration** — name, connection, sign-in, and the optional advanced settings. Open this only when you need to change how the server connects.
+
 ## Sign in to an OAuth server
 
 Many remote MCP servers (Linear, Notion, and similar services) use OAuth:
@@ -42,7 +50,7 @@ The sign-in is stored on this machine, so a restart does not ask again. Use **Fo
 
 ## Decide what each tool may do
 
-Open the **Tool permissions** tab. Every connected server lists its tools; choose one of:
+Expand a server and open its **Tools** sub-tab. Every connected server lists its tools; choose one of:
 
 | Permission | Effect |
 |---|---|
@@ -52,13 +60,13 @@ Open the **Tool permissions** tab. Every connected server lists its tools; choos
 | **Block** | Refused without running. |
 | **Hide** | Not offered to the agent at all. |
 
-The server header sets the default for everything not listed. **Pattern rules** (for example `delete_*`) cover tools the server has not listed yet; they run in order and the first match wins.
+The top row sets the default for everything not listed. **Pattern rules** (for example `delete_*`) cover tools the server has not listed yet; they run in order and the first match wins.
 
 Changes save automatically. These rules govern the agent's calls, not the server.
 
 ## Choose where a server applies
 
-Each server has **Where it applies**:
+Open a server's **Scope** sub-tab to choose where its tools apply:
 
 - **Everywhere (global)** — the default; the tools are available in every session.
 - **Only in selected workspaces** — the tools appear only in sessions that run in one of the directories you pick.

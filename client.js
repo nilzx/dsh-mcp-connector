@@ -33,8 +33,9 @@ window.__ModuleLoader__.load({
     const en = {
       title: 'MCP connector',
       subtitle: 'Connect MCP servers and decide what each tool may do. Tools reach the agent as mcp__<server>__<tool>.',
-      tabsServers: 'Servers',
-      tabsTools: 'Tool permissions',
+      subTabTools: 'Tools',
+      subTabScope: 'Scope',
+      subTabConfig: 'Configuration',
       addServer: 'Add server',
       add: 'Add',
       remove: 'Remove',
@@ -116,12 +117,9 @@ window.__ModuleLoader__.load({
       failOnStartup: 'Refuse to start when a server cannot connect',
       failOnStartupHint: 'Otherwise the Harness starts and the server keeps retrying in the background.',
       openBrowser: 'Open OAuth sign-in pages automatically',
-      toolsTitle: 'Tool permissions',
-      toolsSubtitle: 'Choose what the agent may do with each tool. “Default” follows the server’s fallback.',
       toolsDefault: 'Default for other tools',
       toolsInherit: 'Default',
       toolsOffline: 'Connect the server to list its tools. The default and pattern rules still apply.',
-      toolsEmpty: 'No servers yet. Add one on the Servers page.',
       toolsPatterns: 'Pattern rules',
       toolsPatternsHint: 'Matched in order against the tool name; “*” matches anything. Use them for tools the server has not listed yet.',
       rulePattern: 'Tool name or pattern',
@@ -153,8 +151,9 @@ window.__ModuleLoader__.load({
     const zh = {
       title: 'MCP 连接器',
       subtitle: '连接 MCP 服务器，并决定每个工具能做什么。工具会以 mcp__<服务器>__<工具> 的形式提供给智能体。',
-      tabsServers: '服务器',
-      tabsTools: '工具权限',
+      subTabTools: '工具设置',
+      subTabScope: '作用域设置',
+      subTabConfig: '更改配置',
       addServer: '添加服务器',
       add: '添加',
       remove: '删除',
@@ -236,12 +235,9 @@ window.__ModuleLoader__.load({
       failOnStartup: '有服务器连不上时拒绝启动',
       failOnStartupHint: '关闭后 Harness 仍会启动，该服务器会在后台持续重试。',
       openBrowser: '自动打开 OAuth 登录页面',
-      toolsTitle: '工具权限',
-      toolsSubtitle: '为每个工具选择智能体能做什么。“默认”表示跟随该服务器的兜底设置。',
       toolsDefault: '其余工具的默认权限',
       toolsInherit: '默认',
       toolsOffline: '连接该服务器后会列出工具；默认值和模式规则仍然有效。',
-      toolsEmpty: '还没有服务器，先在“服务器”页添加。',
       toolsPatterns: '按模式匹配的规则',
       toolsPatternsHint: '按顺序与工具名匹配，“*”可匹配任意字符，适用于服务器尚未列出的工具。',
       rulePattern: '工具名或匹配模式',
@@ -757,11 +753,147 @@ window.__ModuleLoader__.load({
             : null))
     }
 
+    /** Per-server tool permissions. */
+    function ServerTools({ server, runtime, updateServer, t, disabled }) {
+      const tools = runtime?.tools ?? []
+      const setTool = (toolName, policy) => {
+        updateServer(current => {
+          const rules = current.rules.filter(rule => rule.pattern.trim() !== toolName)
+          if (policy !== 'inherit') rules.push({ key: uid(), pattern: toolName, policy })
+          return { rules }
+        })
+      }
+      const policyOf = (toolName) => {
+        const rule = server.rules.find(candidate => candidate.pattern.trim() === toolName)
+        return rule === undefined ? 'inherit' : rule.policy
+      }
+      return h('div', { className: 'mcx-tools' },
+        h('div', { className: 'mcx-tools-head' },
+          h('span', { className: 'mcx-label' }, t('toolsDefault')),
+          h(Select, {
+            value: server.toolsDefault,
+            ariaLabel: t('toolsDefault'),
+            disabled,
+            options: [
+              { value: 'allow', label: t('policyAllow') },
+              { value: 'ask', label: t('policyAsk') },
+              { value: 'deny', label: t('policyDeny') },
+              { value: 'off', label: t('policyOff') },
+            ],
+            onChange: value => updateServer({ toolsDefault: value }),
+          })),
+        tools.length === 0
+          ? h('p', { className: 'mcx-hint' }, t('toolsOffline'))
+          : h('div', { className: 'mcx-tool-list' },
+              tools.map(tool => h('div', { className: 'mcx-tool-row', key: tool.name },
+                h('span', { className: 'mcx-tool-name mcx-mono' }, tool.remoteName ?? tool.name),
+                h('span', { className: 'mcx-tool-resolved' }, tool.policy),
+                h(PolicySelect, {
+                  value: policyOf(tool.remoteName ?? tool.name),
+                  t,
+                  disabled,
+                  label: tool.remoteName ?? tool.name,
+                  onChange: value => setTool(tool.remoteName ?? tool.name, value),
+                })))),
+        h('details', { className: 'mcx-details' },
+          h('summary', {}, t('toolsPatterns')),
+          h('p', { className: 'mcx-hint' }, t('toolsPatternsHint')),
+          h('div', { className: 'mcx-rules' },
+            server.rules.map(rule => h('div', { className: 'mcx-rule', key: rule.key },
+              h('input', {
+                className: 'mcx-input mcx-mono',
+                value: rule.pattern,
+                placeholder: 'delete_*',
+                disabled,
+                spellCheck: false,
+                'aria-label': t('rulePattern'),
+                onChange: event => updateServer(current => ({
+                  rules: current.rules.map(candidate => (candidate.key === rule.key ? { ...candidate, pattern: event.target.value } : candidate)),
+                })),
+              }),
+              h('select', {
+                className: 'mcx-input mcx-select',
+                value: rule.policy,
+                disabled,
+                'aria-label': t('toolsSetTo'),
+                onChange: event => updateServer(current => ({
+                  rules: current.rules.map(candidate => (candidate.key === rule.key ? { ...candidate, policy: event.target.value } : candidate)),
+                })),
+              }, [
+                { value: 'allow', label: t('policyAllow') },
+                { value: 'ask', label: t('policyAsk') },
+                { value: 'deny', label: t('policyDeny') },
+                { value: 'off', label: t('policyOff') },
+              ].map(option => h('option', { key: option.value, value: option.value }, option.label))),
+              h('button', {
+                type: 'button',
+                className: 'mcx-icon',
+                title: t('remove'),
+                'aria-label': t('remove'),
+                disabled,
+                onClick: () => updateServer(current => ({ rules: current.rules.filter(candidate => candidate.key !== rule.key) })),
+              }, '×'))),
+            h('button', {
+              type: 'button',
+              className: 'mcx-link-button',
+              disabled,
+              onClick: () => updateServer(current => ({ rules: [...current.rules, { key: uid(), pattern: '', policy: 'allow' }] })),
+            }, `+ ${t('add')}`))))
+    }
+
+    /** Connection configuration, only shown inside its own sub-tab. */
+    function ServerConfig({ server, update, updateUi, t, disabled, id }) {
+      const stdio = server.transport === 'stdio'
+      return h('div', { className: 'mcx-stack' },
+        h('div', { className: 'mcx-grid' },
+          h(Field, { id: id('name'), label: t('name'), hint: t('nameHint') },
+            h(TextInput, { id: id('name'), value: server.name, mono: true, disabled, onChange: value => update({ name: value }) })),
+          h(Field, { id: id('transport'), label: t('transport') },
+            h(Select, {
+              id: id('transport'),
+              value: server.transport,
+              options: [
+                { value: 'streamable-http', label: t('transportHttp') },
+                { value: 'stdio', label: t('transportStdio') },
+                { value: 'sse', label: t('transportSse') },
+              ],
+              disabled,
+              onChange: value => update({ transport: value }),
+            }))),
+        stdio
+          ? h(Field, { id: id('command'), label: t('command'), hint: t('commandHint') },
+              h(TextInput, { id: id('command'), value: server.command, mono: true, disabled, placeholder: 'npx', onChange: value => update({ command: value }) }))
+          : h(Field, { id: id('url'), label: t('url'), hint: t('urlHint') },
+              h(TextInput, { id: id('url'), value: server.url, mono: true, disabled, placeholder: 'https://mcp.example.com/mcp', onChange: value => update({ url: value }) })),
+        stdio ? null : h(AuthFields, { server, update, t, disabled, id }),
+        h('button', {
+          type: 'button',
+          className: 'mcx-link-button',
+          'aria-expanded': server.more,
+          onClick: () => updateUi({ more: !server.more }),
+        }, `${server.more ? '▾' : '▸'} ${t('more')}`),
+        h(MoreFields, { server, update, t, disabled, id }),
+        h('button', {
+          type: 'button',
+          className: 'mcx-link-button',
+          'aria-expanded': server.advanced,
+          onClick: () => updateUi({ advanced: !server.advanced }),
+        }, `${server.advanced ? '▾' : '▸'} ${t('advanced')}`),
+        h(AdvancedFields, { server, update, t, disabled, id }))
+    }
+
+    /** One server card: tools, scope, and configuration behind three sub-tabs. */
     function ServerCard({ server, runtime, update, updateUi, remove, t, editable, act, busy, dupe, workspaces, workspaceSupport }) {
+      const [tab, setTab] = useState('tools')
       const id = suffix => `mcx-${server.key}-${suffix}`
       const disabled = !editable
       const stdio = server.transport === 'stdio'
       const toolCount = runtime?.toolCount ?? 0
+      const tabs = [
+        { id: 'tools', label: t('subTabTools') },
+        { id: 'scope', label: t('subTabScope') },
+        { id: 'config', label: t('subTabConfig') },
+      ]
       return h('section', { className: `mcx-card${server.enabled ? '' : ' mcx-card-off'}` },
         h('header', { className: 'mcx-card-head' },
           h('button', {
@@ -791,149 +923,23 @@ window.__ModuleLoader__.load({
             }, t('remove')))),
         server.expanded
           ? h('div', { className: 'mcx-card-body' },
-              h('div', { className: 'mcx-grid' },
-                h(Field, { id: id('name'), label: t('name'), hint: t('nameHint') },
-                  h(TextInput, { id: id('name'), value: server.name, mono: true, disabled, onChange: value => update({ name: value }) })),
-                h(Field, { id: id('transport'), label: t('transport') },
-                  h(Select, {
-                    id: id('transport'),
-                    value: server.transport,
-                    options: [
-                      { value: 'streamable-http', label: t('transportHttp') },
-                      { value: 'stdio', label: t('transportStdio') },
-                      { value: 'sse', label: t('transportSse') },
-                    ],
-                    disabled,
-                    onChange: value => update({ transport: value }),
-                  }))),
-              stdio
-                ? h(Field, { id: id('command'), label: t('command'), hint: t('commandHint') },
-                    h(TextInput, { id: id('command'), value: server.command, mono: true, disabled, placeholder: 'npx', onChange: value => update({ command: value }) }))
-                : h(Field, { id: id('url'), label: t('url'), hint: t('urlHint') },
-                    h(TextInput, { id: id('url'), value: server.url, mono: true, disabled, placeholder: 'https://mcp.example.com/mcp', onChange: value => update({ url: value }) })),
-              stdio ? null : h(AuthFields, { server, update, t, disabled, id }),
-              h(ScopeFields, { server, update, t, disabled, workspaces, support: workspaceSupport }),
-              h('button', {
-                type: 'button',
-                className: 'mcx-link-button',
-                'aria-expanded': server.more,
-                onClick: () => updateUi({ more: !server.more }),
-              }, `${server.more ? '▾' : '▸'} ${t('more')}`),
-              h(MoreFields, { server, update, t, disabled, id }),
-              h('button', {
-                type: 'button',
-                className: 'mcx-link-button',
-                'aria-expanded': server.advanced,
-                onClick: () => updateUi({ advanced: !server.advanced }),
-              }, `${server.advanced ? '▾' : '▸'} ${t('advanced')}`),
-              h(AdvancedFields, { server, update, t, disabled, id }),
+              h('div', { className: 'mcx-subtabs', role: 'tablist' },
+                tabs.map(item => h('button', {
+                  key: item.id,
+                  type: 'button',
+                  role: 'tab',
+                  'aria-selected': tab === item.id,
+                  className: `mcx-subtab${tab === item.id ? ' mcx-subtab-active' : ''}`,
+                  onClick: () => setTab(item.id),
+                }, item.label))),
+              tab === 'tools'
+                ? h(ServerTools, { server, runtime, updateServer: update, t, disabled })
+                : tab === 'scope'
+                  ? h('div', { className: 'mcx-panel' },
+                      h(ScopeFields, { server, update, t, disabled, workspaces, support: workspaceSupport }))
+                  : h(ServerConfig, { server, update, updateUi, t, disabled, id }),
               h(RuntimePanel, { server, runtime, t, editable, act, busy }))
           : null)
-    }
-
-    /* ------------------------------------------------------------------ */
-    /* Tools page                                                          */
-    /* ------------------------------------------------------------------ */
-
-    function ToolsPage({ draft, runtimeByName, updateServer, t, disabled }) {
-      if (draft.servers.length === 0) {
-        return h('p', { className: 'mcx-empty-body' }, t('toolsEmpty'))
-      }
-      return h('div', { className: 'mcx-tools' },
-        draft.servers.map(server => {
-          const runtime = runtimeByName.get(server.originalName)
-          const name = server.name.trim() === '' ? t('name') : server.name
-          const setTool = (toolName, policy) => {
-            updateServer(server.key, current => {
-              const rules = current.rules.filter(rule => rule.pattern.trim() !== toolName)
-              if (policy !== 'inherit') rules.push({ key: uid(), pattern: toolName, policy })
-              return { rules }
-            })
-          }
-          const policyOf = (toolName) => {
-            const rule = server.rules.find(candidate => candidate.pattern.trim() === toolName)
-            return rule === undefined ? 'inherit' : rule.policy
-          }
-          const tools = runtime?.tools ?? []
-          return h('section', { className: 'mcx-card', key: server.key },
-            h('header', { className: 'mcx-card-head' },
-              h('div', { className: 'mcx-card-title' },
-                h('span', { className: 'mcx-name' }, name),
-                h('span', { className: 'mcx-meta' },
-                  h(StatePill, { state: runtime?.state ?? 'none', t }))),
-              h('div', { className: 'mcx-card-actions' },
-                h('span', { className: 'mcx-meta-text' }, t('toolsDefault')),
-                h(Select, {
-                  value: server.toolsDefault,
-                  ariaLabel: t('toolsDefault'),
-                  disabled,
-                  options: [
-                    { value: 'allow', label: t('policyAllow') },
-                    { value: 'ask', label: t('policyAsk') },
-                    { value: 'deny', label: t('policyDeny') },
-                    { value: 'off', label: t('policyOff') },
-                  ],
-                  onChange: value => updateServer(server.key, { toolsDefault: value }),
-                }))),
-            h('div', { className: 'mcx-card-body' },
-              tools.length === 0
-                ? h('p', { className: 'mcx-hint' }, t('toolsOffline'))
-                : h('div', { className: 'mcx-tool-list' },
-                    tools.map(tool => h('div', { className: 'mcx-tool-row', key: tool.name },
-                      h('span', { className: 'mcx-tool-name mcx-mono' }, tool.remoteName ?? tool.name),
-                      h('span', { className: 'mcx-tool-resolved' }, tool.policy),
-                      h(PolicySelect, {
-                        value: policyOf(tool.remoteName ?? tool.name),
-                        t,
-                        disabled,
-                        label: tool.remoteName ?? tool.name,
-                        onChange: value => setTool(tool.remoteName ?? tool.name, value),
-                      })))),
-              h('details', { className: 'mcx-details' },
-                h('summary', {}, t('toolsPatterns')),
-                h('p', { className: 'mcx-hint' }, t('toolsPatternsHint')),
-                h('div', { className: 'mcx-rules' },
-                  server.rules.map(rule => h('div', { className: 'mcx-rule', key: rule.key },
-                    h('input', {
-                      className: 'mcx-input mcx-mono',
-                      value: rule.pattern,
-                      placeholder: 'delete_*',
-                      disabled,
-                      spellCheck: false,
-                      'aria-label': t('rulePattern'),
-                      onChange: event => updateServer(server.key, current => ({
-                        rules: current.rules.map(candidate => (candidate.key === rule.key ? { ...candidate, pattern: event.target.value } : candidate)),
-                      })),
-                    }),
-                    h('select', {
-                      className: 'mcx-input mcx-select',
-                      value: rule.policy,
-                      disabled,
-                      'aria-label': t('toolsSetTo'),
-                      onChange: event => updateServer(server.key, current => ({
-                        rules: current.rules.map(candidate => (candidate.key === rule.key ? { ...candidate, policy: event.target.value } : candidate)),
-                      })),
-                    }, [
-                      { value: 'allow', label: t('policyAllow') },
-                      { value: 'ask', label: t('policyAsk') },
-                      { value: 'deny', label: t('policyDeny') },
-                      { value: 'off', label: t('policyOff') },
-                    ].map(option => h('option', { key: option.value, value: option.value }, option.label))),
-                    h('button', {
-                      type: 'button',
-                      className: 'mcx-icon',
-                      title: t('remove'),
-                      'aria-label': t('remove'),
-                      disabled,
-                      onClick: () => updateServer(server.key, current => ({ rules: current.rules.filter(candidate => candidate.key !== rule.key) })),
-                    }, '×'))),
-                  h('button', {
-                    type: 'button',
-                    className: 'mcx-link-button',
-                    disabled,
-                    onClick: () => updateServer(server.key, current => ({ rules: [...current.rules, { key: uid(), pattern: '', policy: 'allow' }] })),
-                  }, `+ ${t('add')}`)))))
-        }))
     }
 
     /* ------------------------------------------------------------------ */
@@ -946,10 +952,11 @@ window.__ModuleLoader__.load({
 .mcx-title { margin: 0; font-size: 15px; font-weight: 600; line-height: 22px; color: var(--dsw-alias-label-primary); }
 .mcx-subtitle { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--dsw-alias-label-secondary); max-width: 62ch; }
 .mcx-head-actions { display: flex; align-items: center; gap: 8px; flex: none; }
-.mcx-tabs { display: flex; gap: 4px; border-bottom: 0.5px solid var(--dsw-alias-border-l2); }
-.mcx-tab { padding: 7px 12px; border: none; border-bottom: 2px solid transparent; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 13px; cursor: pointer; }
-.mcx-tab:hover { color: var(--dsw-alias-label-primary); }
-.mcx-tab-active { color: var(--dsw-alias-label-primary); border-bottom-color: var(--dsw-alias-brand-primary); font-weight: 500; }
+.mcx-subtabs { display: flex; gap: 4px; border-bottom: 0.5px solid var(--dsw-alias-border-l2); margin-bottom: 2px; }
+.mcx-subtab { padding: 6px 10px; border: none; border-bottom: 2px solid transparent; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 12px; cursor: pointer; }
+.mcx-subtab:hover { color: var(--dsw-alias-label-primary); }
+.mcx-subtab-active { color: var(--dsw-alias-label-primary); border-bottom-color: var(--dsw-alias-brand-primary); font-weight: 500; }
+.mcx-stack { display: flex; flex-direction: column; gap: 12px; }
 .mcx-button { height: 30px; padding: 0 12px; border-radius: var(--dsw-radius-md); border: 0.5px solid var(--dsw-alias-border-l4); background: transparent; color: var(--dsw-alias-label-primary); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
 .mcx-button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
 .mcx-button:disabled { color: var(--dsw-alias-label-tertiary); cursor: default; }
@@ -1022,6 +1029,7 @@ window.__ModuleLoader__.load({
 .mcx-link { color: var(--dsw-alias-link); text-decoration: none; }
 .mcx-link:hover { text-decoration: underline; }
 .mcx-tools { display: flex; flex-direction: column; gap: 12px; }
+.mcx-tools-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mcx-tool-list { display: flex; flex-direction: column; gap: 6px; }
 .mcx-tool-row { display: flex; align-items: center; gap: 10px; }
 .mcx-tool-name { flex: 1 1 auto; color: var(--dsw-alias-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1040,7 +1048,6 @@ window.__ModuleLoader__.load({
       const [saving, setSaving] = useState(false)
       const [busy, setBusy] = useState(false)
       const [notice, setNotice] = useState(null)
-      const [tab, setTab] = useState('servers')
       const dirtyRef = useRef(false)
       const draftRef = useRef(null)
       const savingRef = useRef(false)
@@ -1271,33 +1278,9 @@ window.__ModuleLoader__.load({
             }, saveLabel),
             h('button', { type: 'button', className: 'mcx-button', disabled: saving, onClick: () => { void reload() } }, t('reload')))),
 
-        h('div', { className: 'mcx-tabs', role: 'tablist' },
-          h('button', {
-            type: 'button',
-            role: 'tab',
-            'aria-selected': tab === 'servers',
-            className: `mcx-tab${tab === 'servers' ? ' mcx-tab-active' : ''}`,
-            onClick: () => setTab('servers'),
-          }, t('tabsServers')),
-          h('button', {
-            type: 'button',
-            role: 'tab',
-            'aria-selected': tab === 'tools',
-            className: `mcx-tab${tab === 'tools' ? ' mcx-tab-active' : ''}`,
-            onClick: () => setTab('tools'),
-          }, t('tabsTools'))),
-
         notice === null ? null : h('div', { className: `mcx-notice mcx-notice-${notice.tone}` }, notice.text),
 
-        tab === 'tools'
-          ? h(ToolsPage, {
-              draft,
-              runtimeByName,
-              updateServer,
-              t,
-              disabled: saving,
-            })
-          : h('div', { className: 'mcx', style: { gap: '12px' } },
+        h('div', { className: 'mcx-stack' },
               h('div', { className: 'mcx-options' },
                 h('h4', { className: 'mcx-options-title' }, t('globalOptions')),
                 h('div', { className: 'mcx-grid' },
