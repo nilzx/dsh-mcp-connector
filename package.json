@@ -66,5 +66,6 @@
         "@deepseek-ai/dsh-client-locale"
       ]
     }
-  }
+  },
+  "packageManager": "pnpm@12.21.0"
 }
