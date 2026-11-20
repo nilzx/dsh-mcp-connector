@@ -26,7 +26,7 @@ Open **Settings → MCP connector** and choose **Add server**:
    - **Local process**: the command and, under **More connection settings**, its arguments (one per line) and environment.
    - **Remote endpoint**: the server URL, for example `https://mcp.example.com/mcp`.
 3. If the server needs a key, add it under **More connection settings** (environment or headers), or store it as a credential and reference it as `${credential:NAME}`.
-4. Stop typing: the configuration saves itself and reconnects. The card turns **Connected** and lists the tools it found.
+4. Press **Enter** or leave the field: the configuration saves and reconnects. Checkboxes and menus save as soon as you change them. The card turns **Connected** and lists the tools it found.
 
 The agent now sees tools named `mcp__github__<tool>`. Ask it to "use the github tools to list open issues".
 

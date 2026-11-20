@@ -24,7 +24,6 @@ window.__ModuleLoader__.load({
     const ACTION_URL = '/mcp-connector/api/action'
     const POLICIES = ['allow', 'ask', 'deny', 'off']
     const SERVER_NAME = /^[A-Za-z0-9_-]{1,32}$/
-    const SAVE_DELAY_MS = 1200
 
     /* ------------------------------------------------------------------ */
     /* Dictionaries                                                        */
@@ -568,6 +567,7 @@ window.__ModuleLoader__.load({
             title: t('remove'),
             'aria-label': t('remove'),
             disabled,
+            'data-commit': true,
             onClick: () => onChange(rows.filter(candidate => candidate.key !== row.key)),
           }, '×'))),
         h('button', {
@@ -862,6 +862,7 @@ window.__ModuleLoader__.load({
                 title: t('remove'),
                 'aria-label': t('remove'),
                 disabled,
+                'data-commit': true,
                 onClick: () => updateServer(current => ({ rules: current.rules.filter(candidate => candidate.key !== rule.key) })),
               }, '×'))),
             h('button', {
@@ -948,6 +949,7 @@ window.__ModuleLoader__.load({
               type: 'button',
               className: 'mcx-button mcx-danger',
               disabled,
+              'data-commit': true,
               onClick: () => {
                 if (window.confirm(t('removeConfirm'))) remove()
               },
@@ -1076,14 +1078,14 @@ window.__ModuleLoader__.load({
       const [saving, setSaving] = useState(false)
       const [busy, setBusy] = useState(false)
       const [notice, setNotice] = useState(null)
-      const [editing, setEditing] = useState(false)
       const appliedConfigRef = useRef(undefined)
       const dirtyRef = useRef(false)
       const draftRef = useRef(null)
       const savingRef = useRef(false)
+      const pendingSaveRef = useRef(false)
+      const saveRef = useRef(undefined)
       dirtyRef.current = dirty
       draftRef.current = draft
-      savingRef.current = saving
 
       const applyState = useCallback((state, { force }) => {
         setSnapshot({
@@ -1097,7 +1099,7 @@ window.__ModuleLoader__.load({
         })
         // A status refresh carries the same configuration; rebuilding the draft
         // would remount every card and drop the sub-tab the user is on.
-        const configKey = JSON.stringify(state.config)
+        const configKey = canonical(state.config)
         const configChanged = configKey !== appliedConfigRef.current
         if (!force && (dirtyRef.current || !configChanged)) return
         appliedConfigRef.current = configKey
@@ -1148,19 +1150,25 @@ window.__ModuleLoader__.load({
         const next = typeof patch === 'function' ? patch(server) : patch
         const changed = Object.keys(next).some(field => !same(server[field], next[field]))
         if (!changed) return
-        setDraft({
+        const nextDraft = {
           ...current,
           servers: current.servers.map(candidate => (candidate.key === key ? { ...candidate, ...next } : candidate)),
-        })
+        }
+        draftRef.current = nextDraft
+        setDraft(nextDraft)
         setDirty(true)
         setNotice(null)
       }, [])
 
       const updateUi = useCallback((key, patch) => {
-        setDraft(current => current === null ? current : {
+        const current = draftRef.current
+        if (current === null) return
+        const nextDraft = {
           ...current,
           servers: current.servers.map(candidate => (candidate.key === key ? { ...candidate, ...patch } : candidate)),
-        })
+        }
+        draftRef.current = nextDraft
+        setDraft(nextDraft)
       }, [])
 
       const updateGlobal = useCallback((patch) => {
@@ -1168,22 +1176,32 @@ window.__ModuleLoader__.load({
         if (current === null) return
         const changed = Object.keys(patch).some(field => !same(current[field], patch[field]))
         if (!changed) return
-        setDraft({ ...current, ...patch })
+        const nextDraft = { ...current, ...patch }
+        draftRef.current = nextDraft
+        setDraft(nextDraft)
         setDirty(true)
         setNotice(null)
       }, [])
 
       const removeServer = useCallback((key) => {
-        setDraft(current => current === null ? current : { ...current, servers: current.servers.filter(candidate => candidate.key !== key) })
+        const current = draftRef.current
+        if (current === null) return
+        const nextDraft = { ...current, servers: current.servers.filter(candidate => candidate.key !== key) }
+        draftRef.current = nextDraft
+        setDraft(nextDraft)
         setDirty(true)
         setNotice(null)
       }, [])
 
       const addServer = useCallback(() => {
-        setDraft(current => current === null ? current : {
+        const current = draftRef.current
+        if (current === null) return
+        const nextDraft = {
           ...current,
           servers: [...current.servers, { ...serverDraft(`mcp-server-${current.servers.length + 1}`, {}), expanded: true }],
-        })
+        }
+        draftRef.current = nextDraft
+        setDraft(nextDraft)
         setDirty(true)
         setNotice(null)
       }, [])
@@ -1193,8 +1211,16 @@ window.__ModuleLoader__.load({
         || (target?.tagName === 'INPUT' && (target.type === 'text' || target.type === 'search' || target.type === 'url'))
 
       const save = useCallback(async () => {
-        if (draftRef.current === null || savingRef.current) return
+        if (draftRef.current === null || !snapshot.editable) return
+        if (savingRef.current) {
+          pendingSaveRef.current = true
+          return
+        }
+        // An incomplete draft is a normal editing state: the header already
+        // shows "incomplete configuration"; do not toast on every blur.
+        if (validateDraft(draftRef.current, t) !== null) return
         const config = configFromDraft(draftRef.current)
+        savingRef.current = true
         setSaving(true)
         setNotice(null)
         let applied = false
@@ -1231,21 +1257,28 @@ window.__ModuleLoader__.load({
           } else {
             // Same configuration: refresh only the live status, so the field
             // being edited keeps focus instead of remounting the card.
-            appliedConfigRef.current = JSON.stringify(config)
+            appliedConfigRef.current = canonical(config)
             await load({ force: false, attempts: 6 })
           }
         }
+        savingRef.current = false
         setSaving(false)
-      }, [applyState, load, t])
+        if (applied && pendingSaveRef.current) {
+          pendingSaveRef.current = false
+          if (dirtyRef.current) saveRef.current?.()
+        }
+      }, [applyState, load, snapshot.editable, t])
+      saveRef.current = save
 
-      // Auto-save: pause, validate, then persist. An incomplete configuration
-      // stays a draft with a visible status instead of an error toast.
-      useEffect(() => {
-        if (!dirty || saving || editing || draft === null || !snapshot.editable) return undefined
-        if (validateDraft(draft, t) !== null) return undefined
-        const timer = setTimeout(() => { void save() }, SAVE_DELAY_MS)
-        return () => clearTimeout(timer)
-      }, [dirty, draft, saving, editing, snapshot.editable, save, t])
+      /** Persist now: every completed interaction calls this instead of a timer. */
+      const commit = useCallback(() => {
+        if (draftRef.current === null || !snapshot.editable) return
+        if (savingRef.current) {
+          pendingSaveRef.current = true
+          return
+        }
+        void saveRef.current?.()
+      }, [snapshot.editable])
 
       const reload = useCallback(async () => {
         setNotice(null)
@@ -1318,8 +1351,20 @@ window.__ModuleLoader__.load({
 
       return h('div', {
         className: 'mcx',
-        onFocusCapture: event => { if (isTextField(event.target)) setEditing(true) },
-        onBlurCapture: event => { if (isTextField(event.target)) setEditing(false) },
+        onBlurCapture: event => {
+          if (!isTextField(event.target)) return
+          // A control that commits on click takes over from the blur.
+          if (event.relatedTarget?.closest?.('[data-commit]')) return
+          if (dirtyRef.current) commit()
+        },
+        onClick: event => {
+          if (event.target?.closest?.('[data-commit]') && dirtyRef.current) commit()
+        },
+        onChange: event => {
+          const tag = event.target?.tagName
+          const type = event.target?.type
+          if ((tag === 'SELECT' || (tag === 'INPUT' && (type === 'checkbox' || type === 'radio'))) && dirtyRef.current) commit()
+        },
       }, styles,
         h('div', { className: 'mcx-head' },
           h('div', null,
