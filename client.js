@@ -33,9 +33,10 @@ window.__ModuleLoader__.load({
     const en = {
       title: 'MCP connector',
       subtitle: 'Connect MCP servers and decide what each tool may do. Tools reach the agent as mcp__<server>__<tool>.',
-      subTabTools: 'Tools',
-      subTabScope: 'Scope',
-      subTabConfig: 'Configuration',
+      subTabConfig: 'Connection',
+      subTabTools: 'Permissions',
+      subTabScope: 'Other',
+      oauthOptions: 'OAuth options',
       addServer: 'Add server',
       add: 'Add',
       remove: 'Remove',
@@ -47,8 +48,6 @@ window.__ModuleLoader__.load({
       statusDirty: 'Unsaved changes',
       statusInvalid: 'Incomplete configuration',
       statusError: 'Save failed',
-      emptyTitle: 'No MCP servers yet',
-      emptyBody: 'Add a local process or a remote endpoint. You can change everything here later.',
       noEditor: 'This profile has no configuration editor. Edit the plugin configuration in cordis.patch.yml instead.',
       loadFailed: 'Could not load the configuration.',
       retry: 'Retry',
@@ -155,9 +154,10 @@ window.__ModuleLoader__.load({
     const zh = {
       title: 'MCP 连接器',
       subtitle: '连接 MCP 服务器，并决定每个工具能做什么。工具会以 mcp__<服务器>__<工具> 的形式提供给智能体。',
-      subTabTools: '工具设置',
-      subTabScope: '作用域设置',
-      subTabConfig: '更改配置',
+      subTabConfig: '连接',
+      subTabTools: '权限',
+      subTabScope: '其他',
+      oauthOptions: 'OAuth 选项',
       addServer: '添加服务器',
       add: '添加',
       remove: '删除',
@@ -169,8 +169,6 @@ window.__ModuleLoader__.load({
       statusDirty: '有未保存的修改',
       statusInvalid: '配置不完整',
       statusError: '保存失败',
-      emptyTitle: '还没有 MCP 服务器',
-      emptyBody: '可以添加本地进程或远程端点。之后随时可以在这里修改。',
       noEditor: '当前配置没有配置编辑器，请改为编辑 cordis.patch.yml。',
       loadFailed: '无法加载配置。',
       retry: '重试',
@@ -316,7 +314,7 @@ window.__ModuleLoader__.load({
         name,
         originalName: name,
         original: clone(source),
-        tab: 'tools',
+        tab: 'config',
         expanded: false,
         more: false,
         advanced: false,
@@ -666,8 +664,10 @@ window.__ModuleLoader__.load({
               }))
           : null,
         oauth
-          ? h('div', { className: 'mcx-grid' },
-              h(Field, { id: id('scopes'), label: t('scopes'), hint: t('scopesHint') },
+          ? h('details', { className: 'mcx-details' },
+              h('summary', {}, t('oauthOptions')),
+              h('div', { className: 'mcx-grid' },
+                h(Field, { id: id('scopes'), label: t('scopes'), hint: t('scopesHint') },
                 h(TextInput, { id: id('scopes'), value: server.scopes, mono: true, disabled, onChange: value => update({ scopes: value }) })),
               h(Field, { id: id('clientId'), label: t('clientId'), hint: t('clientIdHint') },
                 h(TextInput, { id: id('clientId'), value: server.clientId, mono: true, disabled, onChange: value => update({ clientId: value }) })),
@@ -678,7 +678,7 @@ window.__ModuleLoader__.load({
               h(Field, { id: id('resource'), label: t('resource'), hint: t('resourceHint') },
                 h(TextInput, { id: id('resource'), value: server.resource, mono: true, disabled, onChange: value => update({ resource: value }) })),
               h('div', { className: 'mcx-field' },
-                h(Check, { checked: server.oauthBrowser, disabled, label: t('oauthBrowser'), onChange: value => update({ oauthBrowser: value }) })))
+                h(Check, { checked: server.oauthBrowser, disabled, label: t('oauthBrowser'), onChange: value => update({ oauthBrowser: value }) }))))
           : null)
     }
 
@@ -903,15 +903,15 @@ window.__ModuleLoader__.load({
 
     /** One server card: tools, scope, and configuration behind three sub-tabs. */
     function ServerCard({ server, runtime, update, updateUi, remove, t, editable, act, busy, dupe, workspaces, workspaceSupport }) {
-      const tab = server.tab ?? 'tools'
+      const tab = server.tab ?? 'config'
       const id = suffix => `mcx-${server.key}-${suffix}`
       const disabled = !editable
       const stdio = server.transport === 'stdio'
       const toolCount = runtime?.toolCount ?? 0
       const tabs = [
+        { id: 'config', label: t('subTabConfig') },
         { id: 'tools', label: t('subTabTools') },
         { id: 'scope', label: t('subTabScope') },
-        { id: 'config', label: t('subTabConfig') },
       ]
       return h('section', { className: `mcx-card${server.enabled ? '' : ' mcx-card-off'}` },
         h('header', { className: 'mcx-card-head' },
@@ -951,12 +951,12 @@ window.__ModuleLoader__.load({
                   className: `mcx-subtab${tab === item.id ? ' mcx-subtab-active' : ''}`,
                   onClick: () => updateUi({ tab: item.id }),
                 }, item.label))),
-              tab === 'tools'
-                ? h(ServerTools, { server, runtime, updateServer: update, t, disabled })
-                : tab === 'scope'
-                  ? h('div', { className: 'mcx-panel' },
-                      h(ScopeFields, { server, update, t, disabled, workspaces, support: workspaceSupport }))
-                  : h(ServerConfig, { server, update, updateUi, t, disabled, id }),
+              tab === 'config'
+                ? h(ServerConfig, { server, update, updateUi, t, disabled, id })
+                : tab === 'tools'
+                  ? h(ServerTools, { server, runtime, updateServer: update, t, disabled })
+                  : h('div', { className: 'mcx-panel' },
+                      h(ScopeFields, { server, update, t, disabled, workspaces, support: workspaceSupport })),
               h(RuntimePanel, { server, runtime, t, editable, act, busy }))
           : null)
     }
@@ -1035,9 +1035,6 @@ window.__ModuleLoader__.load({
 .mcx-notice-ok { color: var(--dsw-alias-state-success-primary); background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, transparent); }
 .mcx-notice-bad { color: var(--dsw-alias-state-error-primary); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent); }
 .mcx-notice-warn { color: var(--dsw-alias-state-warn-primary); background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 10%, transparent); }
-.mcx-empty { display: flex; flex-direction: column; gap: 6px; padding: 28px 20px; border: 0.5px dashed var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-md); text-align: center; }
-.mcx-empty-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--dsw-alias-label-primary); }
-.mcx-empty-body { margin: 0 auto; font-size: 13px; line-height: 1.5; color: var(--dsw-alias-label-secondary); max-width: 52ch; }
 .mcx-options { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 0.5px solid var(--dsw-alias-settings-card-stroke); border-radius: var(--dsw-radius-md); }
 .mcx-options-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .mcx-footer { display: flex; align-items: center; gap: 10px; }
@@ -1054,7 +1051,7 @@ window.__ModuleLoader__.load({
 .mcx-tool-name { flex: 1 1 auto; color: var(--dsw-alias-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mcx-tool-resolved { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
 .mcx-tool-row .mcx-select { width: 120px; flex: none; }
-.mcx-details { font-size: 13px; color: var(--dsw-alias-label-secondary); }
+.mcx-details { display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--dsw-alias-label-secondary); }
 .mcx-details summary { cursor: pointer; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 `
 
@@ -1333,11 +1330,7 @@ window.__ModuleLoader__.load({
                       onChange: value => updateGlobal({ openBrowser: value }),
                     })))),
 
-              draft.servers.length === 0
-                ? h('div', { className: 'mcx-empty' },
-                    h('p', { className: 'mcx-empty-title' }, t('emptyTitle')),
-                    h('p', { className: 'mcx-empty-body' }, t('emptyBody')))
-                : draft.servers.map(server => h(ServerCard, {
+              draft.servers.map(server => h(ServerCard, {
                     key: server.key,
                     server,
                     runtime: runtimeByName.get(server.originalName),
