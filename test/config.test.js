@@ -148,6 +148,33 @@ describe('normalizeConfig', () => {
     )
   })
 
+  it('defaults every server to a global scope', () => {
+    const { servers } = normalizeConfig({ servers: { fix: { command: 'node' } } })
+    assert.deepEqual(servers[0].scope, { mode: 'global' })
+  })
+
+  it('accepts workspace paths and normalizes a trailing separator', () => {
+    const { servers } = normalizeConfig({
+      servers: { fix: { command: 'node', scope: { mode: 'workspaces', paths: ['/work/project/'] } } },
+    })
+    assert.deepEqual(servers[0].scope, { mode: 'workspaces', paths: ['/work/project'] })
+  })
+
+  it('rejects a workspace scope without directories or with relative paths', () => {
+    assert.throws(
+      () => normalizeConfig({ servers: { fix: { command: 'node', scope: { mode: 'workspaces' } } } }),
+      /servers\.fix\.scope\.paths must list at least one workspace directory/,
+    )
+    assert.throws(
+      () => normalizeConfig({ servers: { fix: { command: 'node', scope: { mode: 'workspaces', paths: ['relative/dir'] } } } }),
+      /must be an absolute directory path/,
+    )
+    assert.throws(
+      () => normalizeConfig({ servers: { fix: { command: 'node', scope: { mode: 'everywhere' } } } }),
+      /scope\.mode must be global or workspaces/,
+    )
+  })
+
   it('accepts an empty configuration', () => {
     assert.deepEqual(normalizeConfig(undefined), {
       servers: [], failOnStartupError: false, openBrowser: true,

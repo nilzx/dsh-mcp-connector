@@ -29,13 +29,14 @@ export class McpConnectorConfigError extends Error {
 const GLOBAL_KEYS = new Set(['servers', 'failOnStartupError', 'openBrowser'])
 const SERVER_KEYS = new Set([
   'transport', 'enabled', 'command', 'args', 'env', 'cwd', 'url', 'headers', 'auth',
-  'toolCallTimeoutMs', 'startupTimeoutMs', 'closeTimeoutMs', 'reconnect', 'tools',
+  'toolCallTimeoutMs', 'startupTimeoutMs', 'closeTimeoutMs', 'reconnect', 'tools', 'scope',
 ])
 const AUTH_KEYS = new Set([
   'type', 'token', 'scopes', 'clientId', 'clientSecret', 'clientName', 'callbackPort',
   'resource', 'openBrowser', 'skipIssuerMetadataValidation',
 ])
 const RECONNECT_KEYS = new Set(['enabled', 'initialDelayMs', 'maxDelayMs', 'maxAttempts'])
+const SCOPE_KEYS = new Set(['mode', 'paths'])
 const TRANSPORTS = new Set(['stdio', 'streamable-http', 'sse'])
 
 /**
@@ -166,6 +167,37 @@ function normalizeReconnect(value, where) {
 }
 
 /**
+ * Normalize the `scope` section: where a server's tools are visible.
+ * @param value - configured object, or undefined.
+ * @param where - path.
+ * @returns `{ mode: 'global' }` or `{ mode: 'workspaces', paths }`.
+ */
+function normalizeScope(value, where) {
+  if (value === undefined || value === null) return { mode: 'global' }
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new McpConnectorConfigError(`${where} must be an object such as { mode: global }`)
+  }
+  onlyKeys(value, SCOPE_KEYS, where)
+  const mode = value.mode ?? 'global'
+  if (mode === 'global') return { mode: 'global' }
+  if (mode !== 'workspaces') {
+    throw new McpConnectorConfigError(`${where}.mode must be global or workspaces`)
+  }
+  const paths = value.paths
+  if (!Array.isArray(paths) || paths.length === 0) {
+    throw new McpConnectorConfigError(`${where}.paths must list at least one workspace directory`)
+  }
+  const normalized = paths.map((entry, index) => {
+    const path = requireString(entry, `${where}.paths[${index}]`)
+    if (!/^(?:[A-Za-z]:[\\/]|\\\\|\/)/.test(path)) {
+      throw new McpConnectorConfigError(`${where}.paths[${index}] must be an absolute directory path`)
+    }
+    return path.replace(/[\\/]+$/, '') || path
+  })
+  return { mode: 'workspaces', paths: normalized }
+}
+
+/**
  * Normalize the `auth` section.
  * @param value - configured object, or undefined.
  * @param transport - resolved transport name.
@@ -251,6 +283,7 @@ function normalizeServer(name, value, globalOpenBrowser) {
       auth: { type: 'none' },
       reconnect: normalizeReconnect(undefined, `${where}.reconnect`),
       tools: compileToolPolicy(undefined, `${where}.tools`),
+      scope: { mode: 'global' },
       openBrowser: false,
     }
   }
@@ -293,6 +326,7 @@ function normalizeServer(name, value, globalOpenBrowser) {
       : requireNumber(value.closeTimeoutMs, `${where}.closeTimeoutMs`, { min: 1, max: 60_000 }),
     reconnect: normalizeReconnect(value.reconnect, `${where}.reconnect`),
     tools: compileToolPolicy(value.tools, `${where}.tools`),
+    scope: normalizeScope(value.scope, `${where}.scope`),
     openBrowser: auth.type === 'oauth'
       ? (auth.openBrowser ?? globalOpenBrowser)
       : false,

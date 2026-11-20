@@ -192,8 +192,85 @@ export async function apply(ctx, config) {
   }
 
   ctx.effect(() => async () => {
+    for (const dispose of scopeRestrictions.values()) {
+      try { dispose() } catch { /* the agent scope may already be gone */ }
+    }
+    scopeRestrictions.clear()
     await Promise.allSettled(connections.map(connection => connection.dispose()))
   }, 'mcp-connector: server connections')
+
+  // ---- Workspace scope -------------------------------------------------
+  // A server scoped to workspaces keeps its tools registered globally and hides
+  // them from every agent whose session runs elsewhere; the scope is the set of
+  // workspace directories the user selected.
+  const agents = ctx.get('agents')
+  const workingDirectory = ctx.get('workingDirectory')
+  /** @type {Map<string, () => void>} agent id to its live restriction. */
+  const scopeRestrictions = new Map()
+
+  /**
+   * The directory an agent's session runs in.
+   * @param agent - live agent.
+   * @returns the absolute directory, or undefined when unknown.
+   */
+  const sessionDirectory = (agent) => {
+    try {
+      const directory = workingDirectory?.get?.(agent.session)
+      if (typeof directory === 'string' && directory !== '') return directory
+    } catch { /* fall back to the session header */ }
+    const header = agent.session?.header
+    return typeof header?.cwd === 'string' && header.cwd !== '' ? header.cwd : undefined
+  }
+
+  /**
+   * Whether one server is visible to a session in this directory.
+   * @param connection - the server.
+   * @param directory - the session's directory.
+   * @returns true when the server applies there.
+   */
+  const scopeAllows = (connection, directory) => {
+    const scope = connection.entry.scope
+    if (scope.mode === 'global') return true
+    if (typeof directory !== 'string' || directory === '') return false
+    const normalized = directory.replace(/[\\/]+$/, '') || directory
+    return scope.paths.includes(normalized)
+  }
+
+  /**
+   * Recompute one agent's hidden tool set.
+   * @param agent - live agent.
+   */
+  const applyAgentScope = (agent) => {
+    if (agent?.ctx === undefined || agent?.session === undefined) return
+    const directory = sessionDirectory(agent)
+    const denied = []
+    for (const connection of connections) {
+      if (scopeAllows(connection, directory)) continue
+      denied.push(...connection.toolNames)
+    }
+    const previous = scopeRestrictions.get(agent.id)
+    if (previous !== undefined) {
+      try { previous() } catch { /* scope already disposed */ }
+      scopeRestrictions.delete(agent.id)
+    }
+    if (denied.length === 0) return
+    try {
+      scopeRestrictions.set(agent.id, agent.ctx.tools.restrict({ deny: denied }))
+    } catch (error) {
+      log.warn(`could not apply a workspace scope to session ${agent.id}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /** Recompute every live agent's scope. */
+  const applyAgentScopes = () => {
+    for (const agent of agents?.list?.() ?? []) applyAgentScope(agent)
+  }
+
+  ctx.effect(() => ctx.on('agent/created', ({ agent }) => {
+    applyAgentScope(agent)
+  }), 'mcp-connector: workspace scope')
+
+  for (const connection of connections) connection.onToolsChanged = applyAgentScopes
 
   // Per-tool authorization: a policy match short-circuits with ask/deny; an
   // allow result delegates so other plugins' gates still run.
@@ -231,6 +308,8 @@ export async function apply(ctx, config) {
       log.warn(`server "${connection.entry.name}" is still starting; continuing without waiting for it`)
     }
   }))
+
+  applyAgentScopes()
 
   if (normalized.failOnStartupError) {
     const failed = connections.find(connection => connection.startupError !== undefined)

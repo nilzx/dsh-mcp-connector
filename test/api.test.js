@@ -4,7 +4,7 @@ import { API_PATHS, registerApi } from '../src/api.js'
 import { createFakeContext, createWebHarness, invokeRoute } from './helpers/fake-ctx.js'
 
 /** Build a plugin-shaped context with the panel services. */
-function harness({ editable = true, rejection = undefined, auth = 'Bearer test' } = {}) {
+function harness({ editable = true, rejection = undefined, auth = 'Bearer test', workspaces = [] } = {}) {
   const entry = { id: 'include:mcp-connector' }
   const web = createWebHarness({ authenticated: auth === 'Bearer test' })
   if (rejection !== undefined) web.connection.requestRejection = () => rejection
@@ -35,6 +35,7 @@ function harness({ editable = true, rejection = undefined, auth = 'Bearer test' 
       webServer: web.webServer,
       connection: web.connection,
       configEditor: editor,
+      workspaceRegistry: { list: () => workspaces },
     },
   })
   ctx.fiber = { entry }
@@ -56,6 +57,15 @@ describe('management API', () => {
     assert.equal(response.body.editable, true)
     assert.deepEqual(response.body.config, { servers: {} })
     assert.equal(response.body.servers[0].state, 'connected')
+    assert.equal(response.body.workspaceSupport, true)
+    assert.deepEqual(response.body.workspaces, [])
+  })
+
+  it('lists the workspaces a server can be scoped to', async () => {
+    const { web } = harness({ workspaces: [{ id: 'w1', title: 'Project', path: '/work/project' }] })
+    const response = await invokeRoute(web.routes.get(API_PATHS.state))
+    assert.deepEqual(response.body.workspaces, [{ id: 'w1', title: 'Project', path: '/work/project' }])
+    assert.equal(response.body.workspaceSupport, true)
   })
 
   it('reports the config as read-only when no editor is mounted', async () => {

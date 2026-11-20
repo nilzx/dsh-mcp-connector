@@ -122,11 +122,17 @@ export function registerApi(ctx, options) {
         return
       }
       const current = readConfig({ editor, entry, rawConfig })
+      const registry = ctx.get('workspaceRegistry')
+      const workspaces = typeof registry?.list === 'function'
+        ? registry.list().map(workspace => ({ id: workspace.id, title: workspace.title, path: workspace.path }))
+        : []
       sendJson(res, 200, {
         ok: true,
         editable: current.editable,
         reason: current.reason,
         config: current.config,
+        workspaces,
+        workspaceSupport: typeof registry?.list === 'function',
         servers: connections.map(connection => connection.snapshot()),
       })
     },

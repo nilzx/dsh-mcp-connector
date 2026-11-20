@@ -89,6 +89,8 @@ export class ServerConnection {
     this.tools = new Map()
     /** @type {Map<string, string>} public tool name to policy. */
     this.policies = new Map()
+    /** Notified after the registered tool set changes, so scopes can re-apply. */
+    this.onToolsChanged = undefined
     this.client = undefined
     this.transport = undefined
     this.flow = undefined
@@ -106,7 +108,7 @@ export class ServerConnection {
   }
 
   /** @returns the public name of every tool this server currently registers. */
-  get registeredNames() {
+  get toolNames() {
     return [...this.tools.keys()]
   }
 
@@ -397,6 +399,7 @@ export class ServerConnection {
       this.tools.set(publicName, record)
       this.policies.set(publicName, record.policy)
     }
+    this.onToolsChanged?.()
   }
 
   /** Unregister every tool this generation owns. */

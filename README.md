@@ -1,114 +1,102 @@
-# MCP 连接器
+# MCP connector
 
-把 MCP 服务器接到 DeepSeek Harness 里，让智能体能直接使用它们的工具。支持本地命令、远程地址和 OAuth 登录，并且可以为每个工具单独设置是否允许、是否需要询问。
+Bring MCP servers into DeepSeek Harness so the agent can use their tools. It connects to local commands, remote endpoints, and OAuth-protected services, and it lets you decide, tool by tool, what the agent may do.
 
-English: [README.en.md](README.en.md)
+中文: [README.zh.md](README.zh.md)
 
-## 开始之前
+## Before you start
 
-- 已安装 DeepSeek Harness（dsh）。
-- 如果服务器是本地命令，需要先装好对应的命令（例如 `npx`）。
+- DeepSeek Harness (dsh) installed.
+- For a local server, the command it needs (for example `npx`) is available.
 
-## 安装
+## Install
 
-1. 打开 **设置 → 插件**。
-2. 选择添加插件，填入包名 `@nilzx/dsh-mcp-connector`。
-3. 安装完成后，**设置** 左侧会多出 **MCP 连接器** 一页。
+1. Open **Settings → Plugins**.
+2. Choose **Add plugin** and enter `@nilzx/dsh-mcp-connector`.
+3. Settings gains an **MCP connector** page.
 
-> 也可以在终端运行 `dsh plugin add @nilzx/dsh-mcp-connector`。安装后如果页面里没看到，刷新一次页面或重启 Harness。
+> You can also run `dsh plugin add @nilzx/dsh-mcp-connector` in a terminal. If the page does not appear, reload the browser tab or restart the Harness.
 
-## 添加第一个服务器
+## Add a server
 
-打开 **设置 → MCP 连接器**，点 **添加服务器**，然后：
+Open **Settings → MCP connector** and choose **Add server**:
 
-1. 起一个名字，例如 `github`。这个名字会出现在工具名里，之后不要随意改。
-2. 选择连接方式：
-   - **本地进程**：填写命令和参数，例如命令 `npx`，参数每行一个：
-     ```
-     -y
-     @modelcontextprotocol/server-github
-     ```
-   - **远程端点**：填写服务器地址，例如 `https://mcp.example.com/mcp`。
-3. 如果服务器需要密钥，在 **环境变量**（本地）或 **请求头**（远程）里填写。密钥建议保存在凭据里，然后引用为 `${credential:名称}`，这样配置文件里不会出现明文。
-4. 点 **保存**。连接器会自动重连，卡片上显示 **已连接**，并列出发现的工具。
+1. Give it a name such as `github`. The name appears in every tool name, so keep it stable.
+2. Choose how to connect:
+   - **Local process**: the command and, under **More connection settings**, its arguments (one per line) and environment.
+   - **Remote endpoint**: the server URL, for example `https://mcp.example.com/mcp`.
+3. If the server needs a key, add it under **More connection settings** (environment or headers), or store it as a credential and reference it as `${credential:NAME}`.
+4. Stop typing: the configuration saves itself and reconnects. The card turns **Connected** and lists the tools it found.
 
-保存后，智能体就能看到名为 `mcp__github__<工具>` 的工具。直接对它说“用 github 工具看看仓库里有哪些 issue”即可。
+The agent now sees tools named `mcp__github__<tool>`. Ask it to "use the github tools to list open issues".
 
-## 登录需要 OAuth 的服务器
+## Sign in to an OAuth server
 
-很多远程 MCP 服务器（例如 Linear、Notion 一类的服务）通过 OAuth 登录：
+Many remote MCP servers (Linear, Notion, and similar services) use OAuth:
 
-1. 添加服务器时，**登录方式** 选择 **OAuth 登录**。授权范围、客户端 ID 等通常留空即可。
-2. 保存后，卡片状态会变成 **需要登录**。
-3. 点 **登录**。浏览器会打开授权页面；同意后回到 Harness，状态会变成 **已连接**。
-4. 登录信息会保存在本机，下次启动不需要重新登录。想换账号时点 **忘记登录**，再重新登录。
+1. Set **Sign-in** to **OAuth**. Scopes, client ID and the rest can usually stay empty.
+2. The card shows **Needs sign-in** and opens the authorization page in your browser.
+3. Approve, and the card turns **Connected**.
 
-如果浏览器没有自动打开，点击卡片里 **打开登录页面** 的链接即可。服务器把登录页放在你自己的浏览器里处理，Harness 只保存登录结果。
+The sign-in is stored on this machine, so a restart does not ask again. Use **Forget sign-in** to switch accounts. If no browser opens, use the **Open the sign-in page** link on the card.
 
-## 设置每个工具能做什么
+## Decide what each tool may do
 
-每个服务器卡片下方都有 **工具权限**。规则从上到下匹配，先命中的生效；`*` 可以匹配任意字符。
+Open the **Tool permissions** tab. Every connected server lists its tools; choose one of:
 
-| 权限 | 效果 |
+| Permission | Effect |
 |---|---|
-| **允许** | 直接执行。 |
-| **询问** | 每次调用都会先弹出确认，由你决定。 |
-| **禁止** | 直接拒绝，不会执行。 |
-| **隐藏** | 不提供给智能体，它根本看不到这个工具。 |
+| **Default** | Follows the server's own default. |
+| **Allow** | Runs immediately. |
+| **Ask** | Pauses for your approval on every call. |
+| **Block** | Refused without running. |
+| **Hide** | Not offered to the agent at all. |
 
-例如，只允许读取、修改类操作一律询问、删除类操作直接禁止：
+The server header sets the default for everything not listed. **Pattern rules** (for example `delete_*`) cover tools the server has not listed yet; they run in order and the first match wins.
 
-```
-其余工具：禁止
-list_*    允许
-get_*     允许
-create_*  询问
-delete_*  禁止
-```
+Changes save automatically. These rules govern the agent's calls, not the server.
 
-设置完成后保存即可。权限规则只影响智能体调用，不会影响服务器本身。
+## Choose where a server applies
 
-## 连接状态
+Each server has **Where it applies**:
 
-卡片上的状态说明：
+- **Everywhere (global)** — the default; the tools are available in every session.
+- **Only in selected workspaces** — the tools appear only in sessions that run in one of the directories you pick.
 
-| 状态 | 含义 |
+This is useful for project-specific servers: keep a work server out of personal sessions, or connect two accounts of the same service to different projects.
+
+## Connection states
+
+| State | Meaning |
 |---|---|
-| 已连接 | 正在使用，工具可用。 |
-| 连接中 / 重连中 | 正在尝试连接，稍等即可。 |
-| 需要登录 | 等你在浏览器里完成登录。 |
-| 失败 | 多次重试仍失败；修好后点 **重连**。 |
-| 已停用 | 配置保留但暂不连接。 |
+| Connected | Tools are available. |
+| Connecting / Reconnecting | An attempt is in flight. |
+| Needs sign-in | Waiting for you to finish in the browser. |
+| Failed | Retries were exhausted; fix the cause and choose **Reconnect**. |
+| Disabled | Configuration kept, connection off. |
 
-列表每 8 秒自动刷新一次，也可以点 **刷新状态**。
+## Troubleshooting
 
-## 常见问题
+**It will not connect.** Expand the card and read the last error. For a local server the usual cause is a wrong command or a missing dependency; for a remote endpoint it is a wrong URL, a network problem, or a sign-in requirement. Fix it and choose **Reconnect**.
 
-**连不上怎么办？**
-展开卡片看最近一次错误。本地进程常见原因是命令写错或缺少依赖；远程端点常见原因是地址不对、网络不通或需要登录。修好后点 **重连**。
+**The URL has no path.** Many services serve MCP at a path such as `/mcp` or `/ds/mcp`; the bare domain usually answers 404 and never asks for a sign-in. Copy the exact endpoint from the service.
 
-**改了配置但没生效？**
-保存后连接器会自动重连。如果状态仍是旧的，点 **刷新状态**；还不生效可以停用再启用这个插件。
+**The agent cannot see a tool.** Check the server is **Connected** and the tool is neither **Hide** nor **Block**. A new session reloads the tool list.
 
-**智能体看不到工具？**
-确认卡片是 **已连接**，并且工具权限不是 **隐藏** 或 **禁止**。新建一个会话后工具列表会重新读取。
+**A change did not apply.** Saving is automatic; if the status says it failed, choose **Reload** and try again. As a last resort disable and re-enable the plugin.
 
-**登录页面打不开？**
-点击卡片里 **打开登录页面** 的链接手动打开，完成后回到 Harness 等待状态变化。
+**Sign-in keeps failing.** Use **Forget sign-in**, then **Sign in** again for a fresh link.
 
-**想彻底移除？**
-在 **设置 → 插件** 里卸载本插件。已保存的登录信息会保留在本机，可在卸载前用 **忘记登录** 清除。
+## Privacy and safety
 
-## 隐私与安全
+- Tool arguments go to the server you configured, and results return to the conversation. Only connect servers you trust.
+- For tools that change remote data, use **Ask** or **Block**.
+- Sign-ins are stored locally and never written into configuration files.
 
-- 工具调用的参数会发送到你配置的服务器，结果会回到当前会话。只连接你信任的服务器。
-- 对会修改远端数据的工具，建议使用 **询问** 或 **禁止**。
-- 登录凭据保存在本机，不会写进配置文件。
+## Feedback
 
-## 反馈
+- Issues: <https://github.com/nilzx/dsh-mcp-connector/issues>
 
-- 问题与建议：<https://github.com/nilzx/dsh-mcp-connector/issues>
-
-## 许可
+## License
 
 MIT
