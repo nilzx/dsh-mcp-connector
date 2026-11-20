@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { installTurnContext } from '../src/turn-context.js'
+import { contextMessage, installTurnContext } from '../src/turn-context.js'
 function fixture(shared=new Map()) {
  const handlers=new Map(), calls=[], messages=[]; let response
  const table={get:k=>shared.get(k),put:async(k,v)=>shared.set(k,structuredClone(v))}
@@ -78,4 +78,18 @@ test('changing blocked tool policy preserves committed cursor and identity pins'
  f.messages.push({role:'tool',toolCallId:'manual',isError:false,content:[{type:'text',text:'initial'}]});f.c.entry.lifecycle.blockedTools.push('new')
  f.setResponse(()=>page('c2',true,'delta'));await f.pre(2,1);const wire=f.calls.filter(x=>x.wire).at(-1).wire;assert.equal(wire.cursor,'c1');assert.equal(wire.reload,undefined)
  const state=[...f.shared.values()][0].servers.s;assert.deepEqual(state.pins,['id']);assert.equal(state.delivery.pending.arguments.cursor,'c2')
+})
+
+test('refresh notice preserves exact legacy receipts and does not suppress new writes',async()=>{
+ for(const legacy of [true,false]) {
+  const f=await mount();await initial(f)
+  f.messages.push({role:'tool',toolCallId:'manual',isError:false,content:[{type:'text',text:'initial'}]})
+  f.setResponse(()=>page('c2',true,'empty changes'));const d=await f.pre(2,1),message=d.messages.at(-1)
+  assert.match(message.content[0].text,/already completed the required context refresh/)
+  assert.match(message.content[0].text,/worthwhile new memory writes, even when this refresh reports no changes/)
+  f.messages.push(legacy?contextMessage('s','empty changes',message.id):message)
+  await f.pre(2,2);f.setResponse(()=>page('c3',true,'next'));await f.pre(3,1)
+  const wire=f.calls.filter(x=>x.wire).at(-1).wire;assert.equal(wire.cursor,'c2');assert.equal(wire.reload,undefined)
+ }
+ assert.doesNotMatch(contextMessage('s','initializing').content[0].text,/already completed/)
 })

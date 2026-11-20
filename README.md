@@ -157,6 +157,12 @@ viewing or model understanding. It requires the public dsh `Session` surface and
 message projection APIs. PTC or another executor can still reject the automatic
 native call, in which case generation is blocked.
 
+Automatic context notices explicitly tell the model that the required refresh
+already ran. Empty deltas do not suppress useful new memory writes from the
+current conversation. This guidance reduces redundant model calls; it is not a
+guarantee that a model will never repeat a read. Exact delivery receipts from
+older notice formats remain valid.
+
 A server that authenticates the connector may also accept host-derived MCP
 request metadata. Configuration is independent of service/tool names:
 
