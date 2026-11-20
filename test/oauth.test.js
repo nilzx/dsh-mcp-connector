@@ -115,3 +115,45 @@ describe('OAuth over Streamable HTTP', () => {
     await harness.dispose()
   })
 })
+describe('OAuth discovery through the 401 challenge', () => {
+  it('surfaces a sign-in URL even when the server publishes no well-known metadata', async () => {
+    const challengeFixture = await startOAuthMcpServer({ challengeOnly: true })
+    const store = createCredentialStore()
+    const harness = createFakeContext({ services: { credentials: store } })
+    try {
+      await apply(harness.ctx, {
+        servers: {
+          remote: {
+            transport: 'streamable-http',
+            url: challengeFixture.url,
+            auth: { type: 'oauth', openBrowser: false },
+            tools: { default: 'allow' },
+            reconnect: { enabled: false },
+          },
+        },
+      })
+
+      // The pre-connect well-known probes fail; the connection's own 401
+      // challenge is what produces the authorization URL.
+      const [pending] = (await harness.callTool('mcp_connector_status')).servers
+      assert.equal(pending.state, 'authorizing')
+      assert.ok(pending.authorizationUrl.startsWith(`${challengeFixture.origin}/authorize`), pending.authorizationUrl)
+
+      const authorization = await fetch(pending.authorizationUrl, { redirect: 'manual' })
+      const callbackUrl = authorization.headers.get('location')
+      const callback = await fetch(callbackUrl)
+      assert.equal(callback.status, 200)
+      await callback.text()
+
+      const connected = await waitFor(async () => {
+        const [server] = (await harness.callTool('mcp_connector_status')).servers
+        return server.state === 'connected' ? server : false
+      }, { what: 'connect after challenge-based authorization' })
+      assert.equal(connected.toolCount, 2)
+      assert.equal(challengeFixture.state.accessTokens.size, 1)
+    } finally {
+      await harness.dispose()
+      await challengeFixture.close()
+    }
+  })
+})

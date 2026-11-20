@@ -62,7 +62,7 @@ function buildServer() {
  * @param options - `{ requireToken }`.
  * @returns the fixture handle.
  */
-export async function startOAuthMcpServer({ requireToken = true } = {}) {
+export async function startOAuthMcpServer({ requireToken = true, challengeOnly = false } = {}) {
   const state = {
     clients: new Map(),
     codes: new Map(),
@@ -94,7 +94,7 @@ export async function startOAuthMcpServer({ requireToken = true } = {}) {
             res.setHeader('content-type', 'application/json; charset=utf-8')
             res.setHeader(
               'www-authenticate',
-              `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+              `Bearer resource_metadata="${origin}${challengeOnly ? '/custom/resource-metadata' : '/.well-known/oauth-protected-resource'}"`,
             )
             res.end(JSON.stringify({ error: 'unauthorized' }))
             return
@@ -104,7 +104,8 @@ export async function startOAuthMcpServer({ requireToken = true } = {}) {
         return
       }
 
-      if (path === '/.well-known/oauth-protected-resource' || path.startsWith('/.well-known/oauth-protected-resource/')) {
+      const metadataPath = challengeOnly ? '/custom/resource-metadata' : undefined
+      if (challengeOnly ? path === metadataPath : path === '/.well-known/oauth-protected-resource' || path.startsWith('/.well-known/oauth-protected-resource/')) {
         json(res, 200, {
           resource: origin,
           authorization_servers: [origin],

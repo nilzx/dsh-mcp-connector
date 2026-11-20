@@ -17,6 +17,7 @@ import { publicToolName } from './naming.js'
 import { resolveToolPolicy } from './policy.js'
 import { expandServerTemplates } from './templates.js'
 import { OAuthFlow } from './oauth/flow.js'
+import { compactJson } from './json.js'
 
 /** How long a pending authorization URL is reused by repeated calls (10 minutes). */
 const PENDING_AUTHORIZATION_TTL_MS = 10 * 60_000
@@ -171,20 +172,12 @@ export class ServerConnection {
     try {
       const entry = await this.#prepare()
       if (this.entry.auth.type === 'oauth') {
-        // The loopback listener must exist before any request can redirect.
+        // The loopback listener must exist before any request can redirect, but
+        // authorization itself starts only after the server answers 401: the
+        // challenge carries the resource-metadata URL many servers rely on for
+        // discovery, so authorizing before connecting dead-ends on servers that
+        // publish no well-known metadata.
         await this.flow.ready()
-      }
-      if (this.entry.auth.type === 'oauth' && !(await this.flow.hasTokens())) {
-        // No usable token yet: discovery either produces a redirect to show the
-        // user, or proves a stored refresh token can produce one.
-        const authorization = await this.flow.authorize({ signal: this.lifecycle.signal })
-        if (authorization.status === 'redirect') {
-          this.status.state = 'authorizing'
-          this.status.authorizationUrl = authorization.url
-          this.status.lastError = `authorization required: open ${authorization.url}`
-          this.pendingSince = Date.now()
-          return
-        }
       }
       this.status.authorizationUrl = undefined
       const transport = createTransport(entry, { provider: this.flow?.provider })
@@ -254,9 +247,21 @@ export class ServerConnection {
       if (transport !== undefined) await bounded(transport.close(), this.entry.closeTimeoutMs)
       if (stale()) return
       if (isUnauthorized(error) && this.flow !== undefined) {
+        if (this.flow.authorizationUrl === undefined) {
+          // The transport usually starts the authorization itself; when it did
+          // not, start it here so the user still gets a link.
+          try {
+            const authorization = await this.flow.authorize({ signal: this.lifecycle.signal })
+            if (authorization.status === 'redirect') this.flow.authorizationUrl = authorization.url
+          } catch (discoveryError) {
+            this.status.lastError = `sign-in could not start: ${this.redact(describeError(discoveryError))}`
+          }
+        }
         this.status.state = 'authorizing'
         this.status.authorizationUrl = this.flow.authorizationUrl
-        this.status.lastError = `authorization required: ${this.flow.authorizationUrl ?? 'start the authorization flow'}`
+        this.status.lastError = this.flow.authorizationUrl === undefined
+          ? (this.status.lastError ?? 'authorization required')
+          : `authorization required: open ${this.flow.authorizationUrl}`
         this.pendingSince ??= Date.now()
         return
       }
@@ -489,7 +494,7 @@ export class ServerConnection {
    * @returns a JSON-serializable snapshot.
    */
   snapshot() {
-    return {
+    return compactJson({
       name: this.entry.name,
       transport: this.entry.transport,
       auth: this.entry.auth.type,
@@ -507,7 +512,7 @@ export class ServerConnection {
         remoteName: record.rawName,
         policy: record.policy,
       })),
-    }
+    })
   }
 
   /** Stop reconnecting, close the transport, and unregister every tool. */

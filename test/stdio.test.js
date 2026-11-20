@@ -84,6 +84,19 @@ describe('stdio MCP server', () => {
     await assert.rejects(() => harness.callTool('mcp__fix__boom'), /boom happened/)
   })
 
+  it('returns status as lossless JSON with no undefined members', async () => {
+    const status = await harness.callTool('mcp_connector_status')
+    const walk = (value) => {
+      if (Array.isArray(value)) return value.every(walk)
+      if (value !== null && typeof value === 'object') {
+        return Object.values(value).every(entry => entry !== undefined && walk(entry))
+      }
+      return true
+    }
+    assert.equal(walk(status), true)
+    assert.deepEqual(JSON.parse(JSON.stringify(status)), status)
+  })
+
   it('reports connection state and per-tool policies', async () => {
     const status = await harness.callTool('mcp_connector_status')
     const [server] = status.servers

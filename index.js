@@ -21,6 +21,7 @@ import { normalizeConfig } from './src/config.js'
 import { ServerConnection } from './src/connection.js'
 import { policyDecision } from './src/policy.js'
 import { registerApi } from './src/api.js'
+import { compactJson } from './src/json.js'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'mcp-connector'
@@ -84,7 +85,7 @@ function managementTools({ connections, find }) {
         render: (_args, value) => jsonContent(value),
       },
       async execute() {
-        return { servers: connections.map(connection => connection.snapshot()) }
+        return compactJson({ servers: connections.map(connection => connection.snapshot()) })
       },
     },
     {
@@ -150,7 +151,7 @@ function managementTools({ connections, find }) {
       async execute(args) {
         const connection = find(args?.server)
         const result = await connection.reconnect()
-        return { server: connection.entry.name, ...result, toolCount: connection.tools.size }
+        return compactJson({ server: connection.entry.name, ...result, toolCount: connection.tools.size })
       },
     },
   ]
