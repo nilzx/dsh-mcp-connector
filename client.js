@@ -281,7 +281,15 @@ window.__ModuleLoader__.load({
     const clone = value => JSON.parse(JSON.stringify(value))
     const isObject = value => typeof value === 'object' && value !== null && !Array.isArray(value)
     const lines = text => text.split('\n').map(line => line.trim()).filter(line => line !== '')
-    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+    /** Canonical JSON: object key order never changes equality. */
+    function canonical(value) {
+      if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+      if (value !== null && typeof value === 'object') {
+        return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
+      }
+      return JSON.stringify(value)
+    }
+    const same = (a, b) => canonical(a) === canonical(b)
 
     function rowsToObject(rows) {
       const result = {}
@@ -510,6 +518,10 @@ window.__ModuleLoader__.load({
         inputMode,
         spellCheck: false,
         onChange: event => onChange(event.target.value),
+        // Enter commits the field: it blurs, which is what triggers the save.
+        onKeyDown: event => {
+          if (event.key === 'Enter') event.currentTarget.blur()
+        },
       })
     }
 
@@ -1064,6 +1076,7 @@ window.__ModuleLoader__.load({
       const [saving, setSaving] = useState(false)
       const [busy, setBusy] = useState(false)
       const [notice, setNotice] = useState(null)
+      const [editing, setEditing] = useState(false)
       const appliedConfigRef = useRef(undefined)
       const dirtyRef = useRef(false)
       const draftRef = useRef(null)
@@ -1175,6 +1188,10 @@ window.__ModuleLoader__.load({
         setNotice(null)
       }, [])
 
+      /** True for inputs whose value is typed character by character. */
+      const isTextField = target => target?.tagName === 'TEXTAREA'
+        || (target?.tagName === 'INPUT' && (target.type === 'text' || target.type === 'search' || target.type === 'url'))
+
       const save = useCallback(async () => {
         if (draftRef.current === null || savingRef.current) return
         const config = configFromDraft(draftRef.current)
@@ -1224,11 +1241,11 @@ window.__ModuleLoader__.load({
       // Auto-save: pause, validate, then persist. An incomplete configuration
       // stays a draft with a visible status instead of an error toast.
       useEffect(() => {
-        if (!dirty || saving || draft === null || !snapshot.editable) return undefined
+        if (!dirty || saving || editing || draft === null || !snapshot.editable) return undefined
         if (validateDraft(draft, t) !== null) return undefined
         const timer = setTimeout(() => { void save() }, SAVE_DELAY_MS)
         return () => clearTimeout(timer)
-      }, [dirty, draft, saving, snapshot.editable, save, t])
+      }, [dirty, draft, saving, editing, snapshot.editable, save, t])
 
       const reload = useCallback(async () => {
         setNotice(null)
@@ -1299,7 +1316,11 @@ window.__ModuleLoader__.load({
           h('p', { className: 'mcx-subtitle' }, snapshot.reason === undefined ? t('noEditor') : snapshot.reason))
       }
 
-      return h('div', { className: 'mcx' }, styles,
+      return h('div', {
+        className: 'mcx',
+        onFocusCapture: event => { if (isTextField(event.target)) setEditing(true) },
+        onBlurCapture: event => { if (isTextField(event.target)) setEditing(false) },
+      }, styles,
         h('div', { className: 'mcx-head' },
           h('div', null,
             h('h3', { className: 'mcx-title' }, t('title')),
@@ -1338,7 +1359,7 @@ window.__ModuleLoader__.load({
                     updateUi: patch => updateUi(server.key, patch),
                     remove: () => removeServer(server.key),
                     t,
-                    editable: !saving,
+                    editable: snapshot.editable,
                     act,
                     busy,
                     dupe: duplicates.has(server.name.trim().toLowerCase()),
