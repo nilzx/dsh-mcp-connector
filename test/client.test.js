@@ -1,0 +1,93 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+import { describe, it } from 'node:test'
+
+const clientPath = fileURLToPath(new URL('../client.js', import.meta.url))
+
+/**
+ * Load client.js the way the Web module loader does, against a fake runtime.
+ * @returns the module definition registered under the package id.
+ */
+async function loadClientModule() {
+  const source = await readFile(clientPath, 'utf8')
+  let loaded
+  const window = {
+    __ModuleLoader__: {
+      load(definition) {
+        loaded = definition
+      },
+    },
+  }
+  const require = id => {
+    if (id !== 'react') throw new Error(`unexpected module ${id}`)
+    return { createElement: () => null, useCallback: fn => fn, useEffect() {}, useMemo: fn => fn(), useRef: () => ({}), useState: value => [value, () => {}] }
+  }
+  // eslint-disable-next-line no-new-func
+  new Function('window', source)(window)
+  assert.ok(loaded !== undefined, 'client.js must register through __ModuleLoader__.load')
+  return { definition: loaded, factory: loaded.factory(require) }
+}
+
+describe('client module', () => {
+  it('registers under the package id and exposes one Settings section', async () => {
+    const { definition, factory } = await loadClientModule()
+    assert.equal(definition.id, '@nilzx/dsh-mcp-connector')
+    assert.deepEqual(factory.inject, ['slots', 'locale'])
+
+    const registrations = []
+    const dictionaries = []
+    const ctx = {
+      effect(fn) {
+        fn()
+        return () => {}
+      },
+      locale: {
+        bind: () => key => key,
+        register(ns, dict) {
+          dictionaries.push({ ns, dict })
+          return () => {}
+        },
+      },
+      slots: {
+        inject(owner, install) {
+          install()
+          return () => {}
+        },
+        register(options, component) {
+          registrations.push({ options, component })
+          return () => {}
+        },
+      },
+    }
+    factory.apply(ctx)
+
+    assert.equal(dictionaries.length, 1)
+    assert.equal(dictionaries[0].ns, 'mcpConnector')
+    assert.equal(typeof dictionaries[0].dict.en.title, 'string')
+    assert.equal(typeof dictionaries[0].dict.zh.title, 'string')
+
+    assert.equal(registrations.length, 1)
+    const [{ options, component }] = registrations
+    assert.equal(options.name, 'settings.section')
+    assert.equal(options.id, 'mcp-connector')
+    assert.equal(typeof options.label(), 'string')
+    assert.equal(typeof component, 'function')
+  })
+
+  it('ships a dictionary with identical keys in both languages', async () => {
+    const { factory } = await loadClientModule()
+    const dictionaries = []
+    factory.apply({
+      effect(fn) { fn(); return () => {} },
+      locale: { bind: () => key => key, register: (ns, dict) => { dictionaries.push(dict); return () => {} } },
+      slots: { inject: (owner, install) => { install(); return () => {} }, register: () => () => {} },
+    })
+    const [dict] = dictionaries
+    assert.deepEqual(Object.keys(dict.en).sort(), Object.keys(dict.zh).sort())
+    for (const [key, value] of Object.entries(dict.en)) {
+      assert.notEqual(value.trim(), '', `empty English copy for ${key}`)
+      assert.notEqual(dict.zh[key].trim(), '', `empty Chinese copy for ${key}`)
+    }
+  })
+})

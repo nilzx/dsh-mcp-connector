@@ -1,0 +1,25 @@
+# dsh-mcp-connector bundle layer. One row owns every MCP server this plugin
+# connects; add servers under `config.servers` in your own profile patch, for
+# example:
+#
+# - id: mcp-connector
+#   config:
+#     servers:
+#       github:
+#         transport: stdio
+#         command: npx
+#         args: ['-y', '@modelcontextprotocol/server-github']
+#         env:
+#           GITHUB_TOKEN: '${credential:GITHUB_TOKEN}'
+#         tools:
+#           default: allow
+#           rules:
+#             'delete_*': ask
+#
+# A patch replaces the targeted row's whole `config`, so override every server
+# you want to keep.
+- insert:
+    - id: mcp-connector
+      name: '@nilzx/dsh-mcp-connector'
+      config:
+        servers: {}
