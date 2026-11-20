@@ -1188,10 +1188,20 @@ window.__ModuleLoader__.load({
           }
         }
         if (applied) {
-          const stillSame = draftRef.current !== null && same(configFromDraft(draftRef.current), config)
+          const current = draftRef.current
+          const stillSame = current !== null && same(configFromDraft(current), config)
           if (stillSame) setDirty(false)
           if (lost) setNotice({ tone: 'warn', text: t('statusSaved') })
-          await load({ force: false, attempts: 6 })
+          const renamed = current !== null && current.servers.some(server => server.name.trim() !== server.originalName)
+          if (renamed) {
+            // A rename changes the runtime name every card resolves against.
+            await load({ force: true, attempts: 6 })
+          } else {
+            // Same configuration: refresh only the live status, so the field
+            // being edited keeps focus instead of remounting the card.
+            appliedConfigRef.current = JSON.stringify(config)
+            await load({ force: false, attempts: 6 })
+          }
         }
         setSaving(false)
       }, [applyState, load, t])
