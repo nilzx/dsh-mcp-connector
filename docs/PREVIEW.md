@@ -1,6 +1,6 @@
 # Preview migration and rollback
 
-`0.3.0-rc.1` is a candidate, not a claim of publication or production readiness. Once published, install the exact version or the `next` dist-tag deliberately; `latest` remains the stable channel. Node >=20 is declared by the connector. dsh 0.2.2-rc.5 declares Node >=24.9.0. Release host validation uses Node 24 with the reviewed dsh sources and esbuild 0.28.2. Earlier Node 22.23.5 checks exercised only selected host modules and the isolated builder; they do not establish support for the full dsh application on Node 22.
+`0.3.0-rc.2` is a candidate, not a claim of publication or production readiness. Once published, install the exact version or the `next` dist-tag deliberately; `latest` remains the stable channel. Node >=20 is declared by the connector. dsh 0.2.2-rc.5 declares Node >=24.9.0. Release host validation uses Node 24 with the reviewed dsh sources and esbuild 0.28.2. Earlier Node 22.23.5 checks exercised only selected host modules and the isolated builder; they do not establish support for the full dsh application on Node 22.
 
 Ordinary MCP configuration remains compatible without a capability profile. `turn-sync` and `trusted-lifecycle` are opt-in connector/host requirements, not MCP standards or certifications. Stock dsh 0.2.2-rc.5 lacks the synchronous creation admission required by `trusted-lifecycle`; the [optional reviewed host proposal](../contrib/dsh-session-admission/README.md) is not automatically installed. Validate the intended host, scoped executor and server together before relying on a profile.
 

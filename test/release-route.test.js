@@ -28,6 +28,6 @@ test('workflow limits publication to tag pushes and transfers the verified tarba
   assert.match(workflow, /github\.event_name == 'push'.*needs\.package\.outputs\.publish == 'true'/)
   assert.match(workflow, /needs: package/)
   assert.match(workflow, /sha256sum -c SHA256SUMS/)
-  assert.match(workflow, /npm publish dist\/candidate\.tgz --access public --tag/)
+  assert.match(workflow, /npm publish \.\/dist\/candidate\.tgz --access public --tag/)
   assert.match(workflow, /args\+=\(--prerelease\)/)
 })

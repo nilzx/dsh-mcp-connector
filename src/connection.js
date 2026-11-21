@@ -23,7 +23,7 @@ import { compactJson } from './json.js'
 const PENDING_AUTHORIZATION_TTL_MS = 10 * 60_000
 
 /** Identity this connector announces in the MCP `initialize` handshake. */
-const CLIENT_INFO = Object.freeze({ name: 'dsh-mcp-connector', version: '0.3.0-rc.1' })
+const CLIENT_INFO = Object.freeze({ name: 'dsh-mcp-connector', version: '0.3.0-rc.2' })
 
 /**
  * Whether one error means "this request needs user authorization".
