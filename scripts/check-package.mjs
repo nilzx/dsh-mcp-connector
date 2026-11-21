@@ -11,11 +11,11 @@ if (args.length !== 0 && args.length !== 2) throw new Error('Usage: node scripts
 const temporary = await mkdtemp(path.join(tmpdir(), 'connector-package-'))
 function run(command, argv, cwd, expected = 0) {
   const result = spawnSync(command, argv, { cwd, encoding: 'utf8', env: { ...process.env, npm_config_cache: path.join(temporary, 'npm-cache') } })
-  if (result.status !== expected) throw new Error(`${command} failed (${result.status}): ${result.stderr}`)
-  return result.stdout + result.stderr
+  if (result.status !== expected) throw new Error(`${command} failed (${result.status}): ${result.stdout}${result.stderr}`)
+  return result
 }
 try {
-  const packed = JSON.parse(run('npm', ['pack', '--json', '--pack-destination', temporary], root))
+  const packed = JSON.parse(run('npm', ['pack', '--json', '--pack-destination', temporary], root).stdout)
   const install = path.join(temporary, 'install')
   await mkdir(install)
   run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', path.join(temporary, (Array.isArray(packed) ? packed[0] : Object.values(packed)[0]).filename)], install)
@@ -25,7 +25,7 @@ try {
   if (!advanced.includes('../contrib/dsh-session-admission/README.md')) throw new Error('Advanced documentation link missing')
   const builder = path.join(pkg, 'contrib/dsh-session-admission/build.mjs')
   const usage = run(process.execPath, [builder], install, 1)
-  if (!usage.includes('Usage: node build.mjs')) throw new Error('Builder usage failure missing')
+  if (!(usage.stdout + usage.stderr).includes('Usage: node build.mjs')) throw new Error('Builder usage failure missing')
   if (args.length) {
     const output = path.join(temporary, 'host-build')
     run(process.execPath, [builder, path.resolve(args[0]), output, path.resolve(args[1])], install)
