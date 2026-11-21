@@ -16,10 +16,10 @@ English: [README.md](README.md)
 ## 安装
 
 1. 打开 **设置 → 插件**。
-2. 选择 **添加插件**，填入 `@nilzx/dsh-mcp-connector`。
+2. 选择 **添加插件**，填入 `@nilzx/dsh-mcp-connector@0.3.0-rc.1`。
 3. 安装完成后，**设置** 左侧会多出 **MCP 连接器** 一页。
 
-> 也可以在终端运行 `dsh plugin add @nilzx/dsh-mcp-connector`。安装后如果页面里没看到，刷新一次页面或重启 Harness。
+> 也可以在终端运行 `dsh plugin add @nilzx/dsh-mcp-connector@0.3.0-rc.1`。安装后如果页面里没看到，刷新一次页面或重启 Harness。
 
 ## 添加服务器
 

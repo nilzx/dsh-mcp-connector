@@ -16,10 +16,10 @@ The `0.3.0-rc.1` candidate is a preview; after publication it is selected with `
 ## Install
 
 1. Open **Settings → Plugins**.
-2. Choose **Add plugin** and enter `@nilzx/dsh-mcp-connector`.
+2. Choose **Add plugin** and enter `@nilzx/dsh-mcp-connector@0.3.0-rc.1`.
 3. Settings gains an **MCP connector** page.
 
-> You can also run `dsh plugin add @nilzx/dsh-mcp-connector` in a terminal. If the page does not appear, reload the browser tab or restart the Harness.
+> You can also run `dsh plugin add @nilzx/dsh-mcp-connector@0.3.0-rc.1` in a terminal. If the page does not appear, reload the browser tab or restart the Harness.
 
 ## Add a server
 

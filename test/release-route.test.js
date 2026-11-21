@@ -3,18 +3,22 @@ import assert from 'node:assert/strict'
 import { releaseRoute } from '../scripts/release-route.mjs'
 
 test('manual runs never publish, even when dispatched on a tag', () => {
-  assert.deepEqual(releaseRoute({ event: 'workflow_dispatch', ref: 'refs/tags/v0.3.0-rc.1', version: '0.3.0-rc.1' }), { publish: false })
+  assert.deepEqual(releaseRoute({ event: 'workflow_dispatch', ref: 'refs/tags/v0.3.0-rc.1', version: '0.3.0-rc.1', channel: 'next' }), { publish: false })
+})
+test('pull requests only validate', () => {
+  assert.deepEqual(releaseRoute({ event: 'pull_request', ref: 'refs/pull/1/merge', version: '0.3.0-rc.1', channel: 'next' }), { publish: false })
 })
 test('matching prerelease and stable tags route to next and latest', () => {
-  assert.deepEqual(releaseRoute({ event: 'push', ref: 'refs/tags/v0.3.0-rc.1', version: '0.3.0-rc.1' }), { publish: true, tag: 'next', prerelease: true })
-  assert.deepEqual(releaseRoute({ event: 'push', ref: 'refs/tags/v1.2.3', version: '1.2.3' }), { publish: true, tag: 'latest', prerelease: false })
+  assert.deepEqual(releaseRoute({ event: 'push', ref: 'refs/tags/v0.3.0-rc.1', version: '0.3.0-rc.1', channel: 'next' }), { publish: true, tag: 'next', prerelease: true })
+  assert.deepEqual(releaseRoute({ event: 'push', ref: 'refs/tags/v1.2.3', version: '1.2.3', channel: 'latest' }), { publish: true, tag: 'latest', prerelease: false })
 })
 test('mismatched tags, unsupported events and malicious or invalid inputs fail closed', () => {
   for (const input of [
-    { event: 'push', ref: 'refs/tags/v0.3.0', version: '0.3.0-rc.1' },
-    { event: 'pull_request', ref: 'refs/tags/v1.2.3', version: '1.2.3' },
-    { event: 'push', ref: 'refs/tags/v1.2.3\nlatest=true', version: '1.2.3' },
-    ...['01.2.3', '1.2.3-01', '1.2.3;echo x', '1.2', 'v1.2.3'].map(version => ({ event: 'push', ref: `refs/tags/v${version}`, version })),
+    { event: 'push', ref: 'refs/tags/v0.3.0', version: '0.3.0-rc.1', channel: 'next' },
+    { event: 'schedule', ref: 'refs/tags/v1.2.3', version: '1.2.3', channel: 'latest' },
+    { event: 'push', ref: 'refs/tags/v1.2.3', version: '1.2.3', channel: 'next' },
+    { event: 'push', ref: 'refs/tags/v1.2.3\nlatest=true', version: '1.2.3', channel: 'latest' },
+    ...['01.2.3', '1.2.3-01', '1.2.3;echo x', '1.2', 'v1.2.3', '1.2.3\n'].map(version => ({ event: 'push', ref: `refs/tags/v${version}`, version, channel: 'latest' })),
   ]) assert.throws(() => releaseRoute(input))
 })
 
