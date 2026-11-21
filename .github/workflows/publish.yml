@@ -39,6 +39,7 @@ jobs:
             "$RUNNER_TEMP/admission" "$RUNNER_TEMP/host/node_modules/esbuild/lib/main.js"
       - name: Run complete suite with real host modules (no skips)
         run: |
+          set -o pipefail
           export DSH_CORDIS_MODULE="$RUNNER_TEMP/host/node_modules/@deepseek-ai/cordis/lib/index.js"
           export DSH_SESSION_ADMISSION_MODULE="$RUNNER_TEMP/admission/session/index.js"
           export DSH_SESSION_MODULE="$RUNNER_TEMP/host/node_modules/@deepseek-ai/dsh-session/lib/index.js"
@@ -46,6 +47,7 @@ jobs:
           export DSH_TOOLS_PIPELINE_MODULE="$RUNNER_TEMP/host/node_modules/@deepseek-ai/dsh-tools/lib/pipeline.js"
           export DSH_STORAGE_DOMAIN_MODULE="$RUNNER_TEMP/host/node_modules/@deepseek-ai/dsh-storage-domain/lib/index.js"
           node --test --test-reporter=tap test/*.test.js | tee "$RUNNER_TEMP/connector-tests.tap"
+          grep -qx '# fail 0' "$RUNNER_TEMP/connector-tests.tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/connector-tests.tap"
       - name: Pack and install the candidate
         run: |
