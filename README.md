@@ -9,13 +9,17 @@ Bring MCP servers into DeepSeek Harness so the agent can use their tools. It con
 - DeepSeek Harness (dsh) installed.
 - For a local server, the command it needs (for example `npx`) is available.
 
+## Preview and compatibility
+
+The `0.3.0-rc.1` candidate is a preview; after publication it is selected with `@next`. Ordinary MCP connections do not require a capability profile. The optional trusted lifecycle profile requires host admission version 1; stock dsh 0.2.2-rc.5 does not provide it and declares Node >=24.9.0. Node 22 checks cover selected modules only, not full dsh support. See [preview migration and rollback](docs/PREVIEW.md) and [host contract](docs/HOST-CONTRACT-v1.md). A configured profile is not certification.
+
 ## Install
 
 1. Open **Settings → Plugins**.
-2. Choose **Add plugin** and enter `@nilzx/dsh-mcp-connector`.
+2. Choose **Add plugin** and enter `@nilzx/dsh-mcp-connector@0.3.0-rc.1`.
 3. Settings gains an **MCP connector** page.
 
-> You can also run `dsh plugin add @nilzx/dsh-mcp-connector` in a terminal. If the page does not appear, reload the browser tab or restart the Harness.
+> You can also run `dsh plugin add @nilzx/dsh-mcp-connector@0.3.0-rc.1` in a terminal. If the page does not appear, reload the browser tab or restart the Harness.
 
 ## Add a server
 

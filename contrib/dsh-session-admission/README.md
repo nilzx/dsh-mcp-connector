@@ -23,10 +23,10 @@ The source context is from the MIT-licensed [DeepSeek Harness repository](https:
 
 ## Reproducible isolated build
 
-The checked builder requires Node, Git, an installed dsh 0.2.2-rc.5, and esbuild 0.28.2. It verifies the two reviewed source hashes, refuses existing output directories and paths inside the installed dsh, copies sources into a new output directory, applies the patch there, and emits both modules plus a hash manifest. It never edits the installed distribution or user profiles.
+The connector declares Node >=20. This optional builder emits modules targeting Node 22, but dsh 0.2.2-rc.5 declares Node >=24.9.0; use a supported Node version for the host. Earlier Node 22.23.5 checks covered the isolated builder and selected host modules only, not support for the full dsh application. The release validation uses Node 24 for the real host module suite. The builder requires Git, an installed dsh 0.2.2-rc.5, and esbuild 0.28.2. It verifies the two reviewed source hashes, refuses existing output directories and paths inside the installed dsh, copies sources into a new output directory, applies the patch there, and emits both modules plus a hash manifest. It never edits the installed distribution or user profiles.
 
 ```sh
-node contrib/dsh-session-admission/build.mjs "/absolute/path/to/@deepseek-ai/dsh" "/absolute/path/to/new-build" "/absolute/path/to/esbuild/lib/main.js"
+node /absolute/path/to/node_modules/@nilzx/dsh-mcp-connector/contrib/dsh-session-admission/build.mjs "/absolute/path/to/@deepseek-ai/dsh" "/absolute/path/to/new-build" "/absolute/path/to/esbuild/lib/main.js"
 ```
 
 Use the output only in a separate test profile based on the full dsh Web app bundles. In that profile's patch, disable the original services and insert the built modules; `name` on an existing patch entry is a match condition, not a module replacement:
@@ -45,10 +45,14 @@ Use the output only in a separate test profile based on the full dsh Web app bun
 
 On each protected connector workflow set `lifecycle.requireCreationAdmission: true`. Keep an isolated `DSH_HOME` and the existing scope, endpoint, credentials and ownership stores for any conversation being restored. Never invent parent metadata or discard sidecars to work around a refusal. A headless-only profile needs only the Session service, but cannot necessarily resume the `standard` preset produced by the Web fork API; use the full host for those forks.
 
-The real-module connector test accepts `DSH_CORDIS_MODULE` pointing to the installed Cordis module and `DSH_SESSION_ADMISSION_MODULE` pointing to the newly built Session module:
+The builder fails with an explicit version or source-hash error if the host or esbuild does not match the reviewed inputs; an existing output directory is also rejected. Obtain matching dependencies separately and do not bypass these checks.
+
+The following tests are available in a source checkout (the npm package does not include the test suite). The real-module connector test accepts `DSH_CORDIS_MODULE` pointing to the installed Cordis module and `DSH_SESSION_ADMISSION_MODULE` pointing to the newly built Session module:
 
 ```sh
 node --test test/creation-admission.test.js test/real-session-admission.test.js
 ```
 
 Set those environment variables before the command; without them the real-module test is explicitly skipped. The final local validation additionally exercised the full host's ordinary fork API, persisted 219 inherited events with their actual parent, resumed that child through the full host, loaded the original subject's current persona, and independently refreshed its memory. It did not simulate a browser click, install the patch globally, or establish upstream support.
+
+From a source checkout, `npm run test:package -- /absolute/path/to/@deepseek-ai/dsh /absolute/path/to/esbuild/lib/main.js` packs and installs the connector in a temporary directory, verifies the bundled materials, and builds the host modules there. Omit both paths to run the package checks without the host build. The check downloads package dependencies as needed and removes its temporary directory afterward.

@@ -102,3 +102,66 @@ test('refresh notice preserves exact legacy receipts and does not suppress new w
  }
  assert.doesNotMatch(contextMessage('s','initializing').content[0].text,/already completed/)
 })
+
+test('inventory fixture exercises generic context over real MCP stdio with a simulated host', async () => {
+  const { Client } = await import('@modelcontextprotocol/client')
+  const { StdioClientTransport } = await import('@modelcontextprotocol/client/stdio')
+  const { fileURLToPath } = await import('node:url')
+  const client = new Client({ name: 'inventory-test', version: '1' }, { capabilities: {} })
+  await client.connect(new StdioClientTransport({
+    command: process.execPath, args: [fileURLToPath(new URL('./fixtures/inventory-server.mjs', import.meta.url))],
+  }))
+  try {
+    const f = await mount()
+    f.c.entry.turnContext.tool = 'inventory'
+    f.c.entry.turnContext.pins = ['/warehouse']
+    f.c.policies = new Map([['mcp__s__inventory', 'allow']])
+    const wire = []
+    const invoke = async args => {
+      wire.push(structuredClone(args))
+      return client.callTool({ name: 'inventory', arguments: args })
+    }
+    const execute = invokeTool => async input => {
+      const result = await f.c.contextCall('inventory', {}, {
+        agent: f.a, signal: input.signal, callId: input.calls[0].id,
+      }, invokeTool)
+      return { results: [{ result: { isError: false, value: result } }], additionalContexts: [], concluded: false }
+    }
+    f.a.ctx.tools.execute = execute(invoke)
+    await f.c.contextCall('inventory', {}, { agent: f.a, signal: f.signal, callId: 'manual' }, invoke)
+    const first = await f.pre(2, 1)
+    assert.match(first.messages.at(-1).content[0].text, /apples\n\npears/)
+    assert.equal(wire.at(-2).reload, true)
+    assert.equal(wire.at(-1).cursor, 'page2')
+    f.messages.push(first.messages.at(-1))
+    await f.pre(2, 2)
+    const empty = await f.pre(3, 1)
+    assert.match(empty.messages.at(-1).content[0].text, /no changes/)
+    assert.equal(wire.at(-1).cursor, 'end')
+    f.a.session.surface.contentGeneration++
+    await f.pre(4, 1)
+    assert.equal(wire.at(-2).reload, true)
+
+    const other = await mount(f.shared)
+    other.a.session.header.id = 'other'
+    other.c.entry.turnContext.tool = 'inventory'
+    other.c.entry.turnContext.pins = ['/warehouse']
+    await other.pre(1, 1)
+    const beforeOther = wire.length
+    await other.c.contextCall('inventory', {}, { agent: other.a, signal: other.signal, callId: 'other' }, invoke)
+    assert.equal(f.shared.size, 2)
+    assert.equal(wire[beforeOther].cursor, undefined)
+
+    f.a.ctx.tools.execute = async () => ({
+      results: [{ result: { isError: true, error: { message: 'native calls unsupported' } } }],
+      additionalContexts: [], concluded: false,
+    })
+    await assert.rejects(() => f.pre(5, 1), { name: 'McpTurnContextError' })
+    f.a.ctx.tools.execute = execute(args => client.callTool({
+      name: 'inventory', arguments: { ...args, cursor: 'bad', reload: false },
+    }))
+    await assert.rejects(() => f.pre(6, 1), { name: 'McpTurnContextError' })
+  } finally {
+    await client.close()
+  }
+})

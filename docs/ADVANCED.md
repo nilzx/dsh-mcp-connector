@@ -298,3 +298,15 @@ new result is present. This proof is bound to the live Session and held only in
 memory; it stores no transcript copy. A changed, reordered or missing message,
 a different Session object, or a process restart without proof cannot use this
 exception. Compaction still requires a full reload of the same service.
+
+## Versioned host capability requirements
+
+A server may opt in to a connector host contract. This is a proposed connector/host contract, not an MCP standard or certification. Existing configurations without a profile remain valid.
+
+```yaml
+capabilityProfile:
+  version: 1
+  tier: turn-sync # or trusted-lifecycle
+```
+
+`turn-sync` requires `turnContext` with pagination, delivery, non-empty state and pins. `trusted-lifecycle` adds non-empty runtime metadata capture and history tool lists, a lifecycle requiring creation admission, and `delegation: deny`. Unknown keys, versions, tiers and missing configuration fail at load. Required host services are checked as their controllers are installed; agent-specific surface and executor capabilities are checked when used, and failures block the step. The server status reports the requested profile and configured features only, not certification. See [host contract v1](HOST-CONTRACT-v1.md) for host requirements, runtime checks and limits.

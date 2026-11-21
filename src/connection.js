@@ -23,7 +23,7 @@ import { compactJson } from './json.js'
 const PENDING_AUTHORIZATION_TTL_MS = 10 * 60_000
 
 /** Identity this connector announces in the MCP `initialize` handshake. */
-const CLIENT_INFO = Object.freeze({ name: 'dsh-mcp-connector', version: '0.1.0' })
+const CLIENT_INFO = Object.freeze({ name: 'dsh-mcp-connector', version: '0.3.0-rc.1' })
 
 /**
  * Whether one error means "this request needs user authorization".
@@ -539,6 +539,7 @@ export class ServerConnection {
       authorizationUrl: this.status.authorizationUrl,
       nextRetryAt: this.status.nextRetryAt,
       serverVersion: this.status.serverVersion,
+      ...(this.entry.capabilityProfile === undefined ? {} : { capabilityProfile: { requested: this.entry.capabilityProfile, configured: this.entry.capabilityProfile.tier === 'trusted-lifecycle' ? ['turn-sync', 'trusted-lifecycle'] : ['turn-sync'] } }),
       ...(this.entry.turnContext === undefined ? {} : { turnContext: {
         mode: 'after-first-call', tool: this.entry.turnContext.tool, failure: 'block-step',
       } }),

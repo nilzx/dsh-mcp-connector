@@ -1,6 +1,6 @@
 {
   "name": "@nilzx/dsh-mcp-connector",
-  "version": "0.2.2",
+  "version": "0.3.0-rc.1",
   "description": "Connect MCP servers to DeepSeek Harness: stdio, Streamable HTTP, SSE, OAuth sign-in, per-tool permissions, and workspace scoping, all managed from a Settings panel.",
   "type": "module",
   "license": "MIT",
@@ -41,11 +41,13 @@
     "icon.svg",
     "README.md",
     "docs",
+    "contrib/dsh-session-admission",
     "README.zh.md",
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "test:package": "node scripts/check-package.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.2.0",
@@ -68,5 +70,9 @@
       ]
     }
   },
-  "packageManager": "pnpm@12.21.0"
+  "packageManager": "pnpm@12.21.0",
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  }
 }

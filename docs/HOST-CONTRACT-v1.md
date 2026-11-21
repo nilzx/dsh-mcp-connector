@@ -1,0 +1,9 @@
+# Connector host capability contract, version 1
+
+This is a proposed connector/host contract, not an MCP standard or a certification. MCP transport alone does not provide these host facilities. A configured profile records requested and configured features, not proof of actual interoperability or model understanding.
+
+`turn-sync` requires a configured context tool with managed persistent state, immutable scalar pins, pagination and delivery reload arguments. The host supplies durable `storageDomain`, persistent session identity and creation time, a model surface revision and message projection, pre-step middleware, and a scoped executor that runs native tool calls through permissions. The tool must be allowed. The connector checks the storage service during installation; session surface and executor availability are checked at use and a rejected or unsupported native call blocks generation. These dynamic properties cannot be certified at plugin startup.
+
+`trusted-lifecycle` includes turn-sync and requires host-derived session metadata, configured capture and history tools, lifecycle readiness gates, delegation denied, durable `sessionQuery`, monotonic tool guards, stream middleware and synchronous `sessions.preparationAdmissionVersion === 1`. The admission event runs before destination session construction or persistence; it does not prevent all source reads or privileged in-process bypasses. The connector rejects missing startup services and refuses an unsupported admission version. The exact event semantics and limitations are documented in [the host proposal](../contrib/dsh-session-admission/README.md).
+
+A successful configuration or a status snapshot does not prove the remote server's identity, protocol behavior, executor support for every agent, or end-to-end compliance. Validate the intended host and server together. Ordinary MCP servers without a profile retain existing behavior.
