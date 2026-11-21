@@ -30,7 +30,7 @@ export class McpConnectorConfigError extends Error {
 const GLOBAL_KEYS = new Set(['servers', 'failOnStartupError', 'openBrowser', 'recoveries'])
 const SERVER_KEYS = new Set([
   'transport', 'enabled', 'command', 'args', 'env', 'cwd', 'url', 'headers', 'auth',
-  'toolCallTimeoutMs', 'startupTimeoutMs', 'closeTimeoutMs', 'reconnect', 'tools', 'scope', 'delegation', 'turnContext', 'runtimeMetadata', 'lifecycle',
+  'toolCallTimeoutMs', 'startupTimeoutMs', 'closeTimeoutMs', 'reconnect', 'tools', 'scope', 'delegation', 'turnContext', 'runtimeMetadata', 'lifecycle', 'capabilityProfile',
 ])
 const AUTH_KEYS = new Set([
   'type', 'token', 'scopes', 'clientId', 'clientSecret', 'clientName', 'callbackPort',
@@ -441,6 +441,17 @@ function normalizeServer(name, value, globalOpenBrowser) {
   }
 
   if (value.lifecycle !== undefined) common.lifecycle = normalizeLifecycle(value.lifecycle, `${where}.lifecycle`, common)
+  if (value.capabilityProfile !== undefined) {
+    const profile = value.capabilityProfile, at = `${where}.capabilityProfile`
+    if (!profile || typeof profile !== 'object' || Array.isArray(profile)) throw new McpConnectorConfigError(`${at} must be an object`)
+    onlyKeys(profile, new Set(['version', 'tier']), at)
+    if (profile.version !== 1) throw new McpConnectorConfigError(`${at}.version must be 1`)
+    if (!['turn-sync', 'trusted-lifecycle'].includes(profile.tier)) throw new McpConnectorConfigError(`${at}.tier must be turn-sync or trusted-lifecycle`)
+    const turn = common.turnContext
+    if (!turn?.pagination || !turn.delivery || !Object.keys(turn.state).length || !turn.pins.length) throw new McpConnectorConfigError(`${at} requires turnContext pagination, delivery, non-empty state and pins`)
+    if (profile.tier === 'trusted-lifecycle' && (!common.runtimeMetadata?.captureTools.length || !common.runtimeMetadata.historyTools.length || !common.lifecycle?.requireCreationAdmission || common.delegation !== 'deny')) throw new McpConnectorConfigError(`${at} trusted-lifecycle requires runtimeMetadata captureTools and historyTools, lifecycle.requireCreationAdmission: true and delegation: deny`)
+    common.capabilityProfile = { version: 1, tier: profile.tier }
+  }
 
   if (transport === 'stdio') {
     const command = requireString(value.command, `${where}.command`)

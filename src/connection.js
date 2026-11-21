@@ -539,6 +539,7 @@ export class ServerConnection {
       authorizationUrl: this.status.authorizationUrl,
       nextRetryAt: this.status.nextRetryAt,
       serverVersion: this.status.serverVersion,
+      ...(this.entry.capabilityProfile === undefined ? {} : { capabilityProfile: { requested: this.entry.capabilityProfile, configured: this.entry.capabilityProfile.tier === 'trusted-lifecycle' ? ['turn-sync', 'trusted-lifecycle'] : ['turn-sync'] } }),
       ...(this.entry.turnContext === undefined ? {} : { turnContext: {
         mode: 'after-first-call', tool: this.entry.turnContext.tool, failure: 'block-step',
       } }),
