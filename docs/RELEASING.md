@@ -1,64 +1,9 @@
 # Releasing
 
-Releases are secretless: a version tag is published by GitHub Actions using
-npm **trusted publishing** (OIDC). The repository stores no npm token, and each
-run gets a short-lived publish token bound to this repository and this workflow.
+The candidate version is `0.3.0-rc.1`. No publication is implied by this document. The existing npm package's trusted publisher must authorize this repository and `.github/workflows/publish.yml` for direct publishing. GitHub-hosted runners use OIDC; no long-lived publish token is required. Confirm the npm trusted publisher configuration before any release. See [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
 
-```
-tag vX.Y.Z  ->  test  ->  version check  ->  npm publish (OIDC)  ->  GitHub release
-```
+The workflow has two jobs. The package job has read-only repository permission, validates strict SemVer and event routing, runs tests, packs once, installs that exact tarball in isolation, checks its materials and uploads it with a digest. A manual `workflow_dispatch`, even against a tag, stops there. A push of an exact `v<package.json version>` tag can start the publish job after the package job succeeds. The publish job verifies the digest and publishes that same tarball via OIDC; it does not repack. Prereleases go to npm `next` and a GitHub prerelease; stable versions go to npm `latest` and a normal GitHub release. The candidate's `publishConfig.tag` is also `next` as a defense against an accidental manual publish; a future stable version must review that default.
 
-## One-time bootstrap
+Review version, lockfile, compatibility and [migration/rollback](PREVIEW.md) before tagging. Tags and npm versions are immutable: an incorrect published version requires a new version, not an overwrite. Publish, deployment and changes to existing instances are separate actions. If npm succeeds but GitHub release creation fails, inspect registry and release state before any retry; do not blindly republish.
 
-npm only accepts a trusted publisher for a package that already exists, so the
-first version is published once by hand and then the trust relationship is
-created. Both commands prompt for two-factor authentication.
-
-```sh
-# 1. First release only: publish the current version yourself.
-npm publish --access public
-
-# 2. Allow this repository and this workflow to publish future versions.
-npm trust github @nilzx/dsh-mcp-connector \
-  --file publish.yml \
-  --repo nilzx/dsh-mcp-connector \
-  --allow-publish
-```
-
-`--file` takes the workflow file name; npm resolves it to
-`.github/workflows/publish.yml`. `--allow-publish` is required — without it the
-connection is created but cannot publish.
-
-The same relationship can be created on npmjs.com: the package's **Settings →
-Trusted publishing → GitHub Actions**, with owner `nilzx`, repository
-`dsh-mcp-connector`, workflow `publish.yml`.
-
-After step 2, `NPM_TOKEN` is no longer used by any workflow and can be deleted
-from the repository secrets.
-
-## Publish a version
-
-```sh
-npm version patch   # or minor / major: bumps package.json, commits, tags vX.Y.Z
-git push origin main
-git push origin vX.Y.Z
-```
-
-The `Publish` workflow installs, tests, checks that the tag matches
-`package.json`, publishes with provenance, and creates a GitHub release.
-
-`.github/workflows/ci.yml` runs the same suite on every push to `main` and on
-pull requests.
-
-## Manual run
-
-Actions → Publish → Run workflow publishes the current `package.json` version
-without requiring a tag. The tag/version check is skipped for that path.
-
-## Troubleshooting
-
-| Symptom | Cause |
-|---|---|
-| `EOTP` / `ERR_PNPM_OTP_NON_INTERACTIVE` | A token was used instead of trusted publishing, or the trust relationship does not exist yet. |
-| `403` with `OIDC` in CI | The trusted publisher's repository, workflow file, or `--allow-publish` flag does not match this run. |
-| `You cannot publish over the previously published versions` | The version in `package.json` already exists; bump it before tagging. |
+The checks do not certify the host or server. The manual workflow tests package contents and installation; real host and executor compatibility requires the separate configured acceptance checks. GitHub Actions and npm OIDC publishing must be verified in the actual repository when a release is explicitly authorized.

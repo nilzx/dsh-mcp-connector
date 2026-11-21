@@ -9,6 +9,10 @@ Bring MCP servers into DeepSeek Harness so the agent can use their tools. It con
 - DeepSeek Harness (dsh) installed.
 - For a local server, the command it needs (for example `npx`) is available.
 
+## Preview and compatibility
+
+The `0.3.0-rc.1` candidate is a preview; after publication it is selected with `@next`. Ordinary MCP connections do not require a capability profile. The optional trusted lifecycle profile requires host admission version 1; stock dsh 0.2.2-rc.5 does not provide it. See [preview migration and rollback](docs/PREVIEW.md) and [host contract](docs/HOST-CONTRACT-v1.md). A configured profile is not certification.
+
 ## Install
 
 1. Open **Settings → Plugins**.
