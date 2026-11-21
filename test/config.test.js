@@ -182,9 +182,40 @@ describe('normalizeConfig', () => {
   })
 })
 describe('capability profiles', () => {
- const turnContext={tool:'inventory',state:{cursor:'/cursor'},pins:['/warehouse'],pagination:{complete:'/complete'},delivery:{reloadArguments:{reload:true}}}
- const make=(extra={})=>({servers:{store:{command:'node',turnContext,capabilityProfile:{version:1,tier:'turn-sync'},...extra}}})
- it('accepts the versioned turn profile and keeps old configurations valid',()=>{assert.equal(normalizeConfig(make()).servers[0].capabilityProfile.tier,'turn-sync');assert.equal(normalizeConfig({servers:{s:{command:'node'}}}).servers[0].capabilityProfile,undefined)})
- it('rejects unknown versions, tiers, keys and incomplete turn configuration',()=>{for(const capabilityProfile of [{version:2,tier:'turn-sync'},{version:1,tier:'other'},{version:1,tier:'turn-sync',extra:true}])assert.throws(()=>normalizeConfig(make({capabilityProfile})),McpConnectorConfigError);for(const field of ['pagination','delivery','state','pins']){const t=structuredClone(turnContext);delete t[field];assert.throws(()=>normalizeConfig(make({turnContext:t})),McpConnectorConfigError)}})
- it('requires the full trusted lifecycle',()=>{assert.throws(()=>normalizeConfig(make({capabilityProfile:{version:1,tier:'trusted-lifecycle'}})),/trusted-lifecycle requires/);const runtimeMetadata={namespace:'io.example/session',captureTools:['start','probe'],historyTools:['history']};const lifecycle={group:'g',startTools:['start'],probe:'probe',allowedTools:['history'],ready:{start:'/ready',probe:'/ready'},requireCreationAdmission:true};assert.equal(normalizeConfig(make({delegation:'deny',runtimeMetadata,lifecycle,capabilityProfile:{version:1,tier:'trusted-lifecycle'}})).servers[0].capabilityProfile.tier,'trusted-lifecycle')})
+  const turnContext = {
+    tool: 'inventory', state: { cursor: '/cursor' }, pins: ['/warehouse'],
+    pagination: { complete: '/complete' }, delivery: { reloadArguments: { reload: true } },
+  }
+  const make = (extra = {}) => ({ servers: { store: {
+    command: 'node', turnContext, capabilityProfile: { version: 1, tier: 'turn-sync' }, ...extra,
+  } } })
+
+  it('accepts the versioned turn profile and keeps old configurations valid', () => {
+    assert.equal(normalizeConfig(make()).servers[0].capabilityProfile.tier, 'turn-sync')
+    assert.equal(normalizeConfig({ servers: { s: { command: 'node' } } }).servers[0].capabilityProfile, undefined)
+  })
+
+  it('rejects unknown versions, tiers, keys and incomplete turn configuration', () => {
+    for (const capabilityProfile of [
+      { version: 2, tier: 'turn-sync' }, { version: 1, tier: 'other' },
+      { version: 1, tier: 'turn-sync', extra: true },
+    ]) assert.throws(() => normalizeConfig(make({ capabilityProfile })), McpConnectorConfigError)
+    for (const field of ['pagination', 'delivery', 'state', 'pins']) {
+      const incomplete = structuredClone(turnContext)
+      delete incomplete[field]
+      assert.throws(() => normalizeConfig(make({ turnContext: incomplete })), McpConnectorConfigError)
+    }
+  })
+
+  it('requires the full trusted lifecycle', () => {
+    const capabilityProfile = { version: 1, tier: 'trusted-lifecycle' }
+    assert.throws(() => normalizeConfig(make({ capabilityProfile })), /trusted-lifecycle requires/)
+    const runtimeMetadata = { namespace: 'io.example/session', captureTools: ['start', 'probe'], historyTools: ['history'] }
+    const lifecycle = {
+      group: 'g', startTools: ['start'], probe: 'probe', allowedTools: ['history'],
+      ready: { start: '/ready', probe: '/ready' }, requireCreationAdmission: true,
+    }
+    const server = normalizeConfig(make({ delegation: 'deny', runtimeMetadata, lifecycle, capabilityProfile })).servers[0]
+    assert.equal(server.capabilityProfile.tier, 'trusted-lifecycle')
+  })
 })
