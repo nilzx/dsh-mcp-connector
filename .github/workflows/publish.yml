@@ -22,13 +22,31 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Validate event and version
         id: route
         run: node scripts/release-route.mjs
-      - run: pnpm test
+      # dsh 0.2.2-rc.5 declares Node >=24.9; use a supported host runtime.
+      - name: Install isolated reviewed host modules
+        run: |
+          npm install --prefix "$RUNNER_TEMP/host" --no-audit --no-fund @deepseek-ai/dsh@0.2.2-rc.5 esbuild@0.28.2
+          test ! -e "$RUNNER_TEMP/host/node_modules/@deepseek-ai/dsh/node_modules"
+          ln -s ../.. "$RUNNER_TEMP/host/node_modules/@deepseek-ai/dsh/node_modules"
+          node contrib/dsh-session-admission/build.mjs \
+            "$RUNNER_TEMP/host/node_modules/@deepseek-ai/dsh" \
+            "$RUNNER_TEMP/admission" "$RUNNER_TEMP/host/node_modules/esbuild/lib/main.js"
+      - name: Run complete suite with real host modules (no skips)
+        run: |
+          export DSH_CORDIS_MODULE="$RUNNER_TEMP/host/node_modules/@deepseek-ai/cordis/lib/index.js"
+          export DSH_SESSION_ADMISSION_MODULE="$RUNNER_TEMP/admission/session/index.js"
+          export DSH_SESSION_MODULE="$RUNNER_TEMP/host/node_modules/@deepseek-ai/dsh-session/lib/index.js"
+          export DSH_LLM_MODULE="$RUNNER_TEMP/host/node_modules/@deepseek-ai/dsh-llm/lib/index.js"
+          export DSH_TOOLS_PIPELINE_MODULE="$RUNNER_TEMP/host/node_modules/@deepseek-ai/dsh-tools/lib/pipeline.js"
+          export DSH_STORAGE_DOMAIN_MODULE="$RUNNER_TEMP/host/node_modules/@deepseek-ai/dsh-storage-domain/lib/index.js"
+          node --test --test-reporter=tap test/*.test.js | tee "$RUNNER_TEMP/connector-tests.tap"
+          grep -qx '# skipped 0' "$RUNNER_TEMP/connector-tests.tap"
       - name: Pack and install the candidate
         run: |
           mkdir -p dist "$RUNNER_TEMP/connector-install"

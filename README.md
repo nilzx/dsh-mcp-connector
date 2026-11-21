@@ -11,7 +11,7 @@ Bring MCP servers into DeepSeek Harness so the agent can use their tools. It con
 
 ## Preview and compatibility
 
-The `0.3.0-rc.1` candidate is a preview; after publication it is selected with `@next`. Ordinary MCP connections do not require a capability profile. The optional trusted lifecycle profile requires host admission version 1; stock dsh 0.2.2-rc.5 does not provide it. See [preview migration and rollback](docs/PREVIEW.md) and [host contract](docs/HOST-CONTRACT-v1.md). A configured profile is not certification.
+The `0.3.0-rc.1` candidate is a preview; after publication it is selected with `@next`. Ordinary MCP connections do not require a capability profile. The optional trusted lifecycle profile requires host admission version 1; stock dsh 0.2.2-rc.5 does not provide it and declares Node >=24.9.0. Node 22 checks cover selected modules only, not full dsh support. See [preview migration and rollback](docs/PREVIEW.md) and [host contract](docs/HOST-CONTRACT-v1.md). A configured profile is not certification.
 
 ## Install
 

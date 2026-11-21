@@ -24,5 +24,7 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Test
-        run: pnpm test
+      - name: Test (lightweight; real host checks are skipped)
+        run: |
+          echo "Node 22 connector checks: 11 real-host tests require the separate publish workflow. This does not validate full dsh on Node 22."
+          pnpm test
