@@ -23,7 +23,7 @@ The source context is from the MIT-licensed [DeepSeek Harness repository](https:
 
 ## Reproducible isolated build
 
-The connector declares Node >=20. This optional builder emits modules targeting Node 22; use Node 22 or newer for the isolated host build and runtime. Validation here used Node 26; other Node versions have not been independently verified. The builder requires Git, an installed dsh 0.2.2-rc.5, and esbuild 0.28.2. It verifies the two reviewed source hashes, refuses existing output directories and paths inside the installed dsh, copies sources into a new output directory, applies the patch there, and emits both modules plus a hash manifest. It never edits the installed distribution or user profiles.
+The connector declares Node >=20. This optional builder emits modules targeting Node 22; use Node 22 or newer for the isolated host build and runtime. The isolated package and host build checks passed on Node 22.23.5 and Node 26.13.1; other versions have not been independently verified. The builder requires Git, an installed dsh 0.2.2-rc.5, and esbuild 0.28.2. It verifies the two reviewed source hashes, refuses existing output directories and paths inside the installed dsh, copies sources into a new output directory, applies the patch there, and emits both modules plus a hash manifest. It never edits the installed distribution or user profiles.
 
 ```sh
 node /absolute/path/to/node_modules/@nilzx/dsh-mcp-connector/contrib/dsh-session-admission/build.mjs "/absolute/path/to/@deepseek-ai/dsh" "/absolute/path/to/new-build" "/absolute/path/to/esbuild/lib/main.js"
