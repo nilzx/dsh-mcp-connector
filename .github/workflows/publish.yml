@@ -60,6 +60,11 @@ jobs:
           test -f "$RUNNER_TEMP/connector-install/node_modules/@nilzx/dsh-mcp-connector/docs/HOST-CONTRACT-v1.md"
           cd dist
           sha256sum candidate.tgz > SHA256SUMS
+      - name: Dry-run publishing the same tarball with npm 11
+        run: |
+          npm install --prefix "$RUNNER_TEMP/npm-publisher" --no-audit --no-fund npm@11.15.0
+          node "$RUNNER_TEMP/npm-publisher/node_modules/npm/bin/npm-cli.js" --version
+          node "$RUNNER_TEMP/npm-publisher/node_modules/npm/bin/npm-cli.js" publish ./dist/candidate.tgz --dry-run --access public --tag "$(node -p "require('./package.json').publishConfig.tag")"
       - uses: actions/upload-artifact@v4
         with:
           name: verified-package
@@ -88,7 +93,7 @@ jobs:
       - name: Publish verified tarball
         env:
           RELEASE_TAG: ${{ needs.package.outputs.tag }}
-        run: npm publish dist/candidate.tgz --access public --tag "$RELEASE_TAG" --provenance
+        run: npm publish ./dist/candidate.tgz --access public --tag "$RELEASE_TAG" --provenance
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

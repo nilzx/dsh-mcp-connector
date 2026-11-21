@@ -11,15 +11,15 @@ English: [README.md](README.md)
 
 ## 预览版与兼容性
 
-`0.3.0-rc.1` 是预览候选版，发布后可通过 `@next` 选择。普通 MCP 连接不要求能力配置；可选的可信生命周期等级要求宿主提供准入版本 1，原版 dsh 0.2.2-rc.5 不包含该能力，并要求 Node >=24.9.0。Node 22 检查只覆盖部分模块，不能证明完整 dsh 支持。请参阅[预览版迁移与回退说明](docs/PREVIEW.md)和[宿主契约](docs/HOST-CONTRACT-v1.md)。配置能力等级不等于认证通过。
+`0.3.0-rc.2` 是预览候选版，发布后可通过 `@next` 选择。普通 MCP 连接不要求能力配置；可选的可信生命周期等级要求宿主提供准入版本 1，原版 dsh 0.2.2-rc.5 不包含该能力，并要求 Node >=24.9.0。Node 22 检查只覆盖部分模块，不能证明完整 dsh 支持。请参阅[预览版迁移与回退说明](docs/PREVIEW.md)和[宿主契约](docs/HOST-CONTRACT-v1.md)。配置能力等级不等于认证通过。
 
 ## 安装
 
 1. 打开 **设置 → 插件**。
-2. 选择 **添加插件**，填入 `@nilzx/dsh-mcp-connector@0.3.0-rc.1`。
+2. 选择 **添加插件**，填入 `@nilzx/dsh-mcp-connector@0.3.0-rc.2`。
 3. 安装完成后，**设置** 左侧会多出 **MCP 连接器** 一页。
 
-> 也可以在终端运行 `dsh plugin add @nilzx/dsh-mcp-connector@0.3.0-rc.1`。安装后如果页面里没看到，刷新一次页面或重启 Harness。
+> 也可以在终端运行 `dsh plugin add @nilzx/dsh-mcp-connector@0.3.0-rc.2`。安装后如果页面里没看到，刷新一次页面或重启 Harness。
 
 ## 添加服务器
 
